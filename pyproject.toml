@@ -15,17 +15,21 @@ dependencies = [
 ]
 
 [tool.setuptools]
-py-modules = ["manager", "utils", "services", "clients", "keys", "servers"]
+package-dir = {"" = "src"}
+packages = ["vpn_manager"]
 
 [project.optional-dependencies]
 dev = [
-    "ruff>=0.1.0",
     "mypy>=1.0.0",
+    "ruff>=0.1.0",
     "types-PyYAML",
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-snapshot>=0.9.0",
 ]
 
 [project.scripts]
-vpn-manager = "manager:main"
+vpn-manager = "vpn_manager.manager:main"
 
 [project.urls]
 Homepage = "https://github.com/strelga/wireguard-vpn-manager"
@@ -95,6 +99,10 @@ unfixable = []
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
+# Per-file ignores
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["PLR0913", "PLR2004"]
+
 [tool.ruff.format]
 # Like Black, use double quotes for strings.
 quote-style = "double"
@@ -122,6 +130,7 @@ warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
 strict_equality = true
+mypy_path = "src"
 
 [[tool.mypy.overrides]]
 module = "yaml"

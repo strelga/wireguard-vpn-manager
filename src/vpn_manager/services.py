@@ -6,7 +6,8 @@ WireGuard Services Management Module
 import subprocess
 from pathlib import Path
 
-from utils import Color, DockerManager, Logger, WireGuardConfig
+from .servers.utils import ServerConfig
+from .utils import Color, DockerManager, Logger
 
 
 class ServiceManager:
@@ -24,11 +25,9 @@ class ServiceManager:
             for server_dir in servers_dir.iterdir():
                 if server_dir.is_dir():
                     try:
-                        wg_config = WireGuardConfig(server_dir.name)
+                        wg_config = ServerConfig(server_dir.name)
                         server_info = wg_config.get_server_info()
-                        self.server_containers[server_dir.name] = server_info[
-                            "container_name"
-                        ]
+                        self.server_containers[server_dir.name] = server_info.container_name
                     except Exception:
                         self.server_containers[server_dir.name] = (
                             f"wireguard-{server_dir.name}"
@@ -170,9 +169,9 @@ class ServiceManager:
         print(f"\n{Color.BLUE}Service ports:{Color.NC}")
         for server in servers:
             try:
-                wg_config = WireGuardConfig(server)
-                server_info = wg_config.get_server_info()
-                print(f"  - {server}: {server_info['server_port']}/udp")
+                server_config = ServerConfig(server)
+                server_info = server_config.get_server_info()
+                print(f"  - {server}: {server_info.port}/udp")
             except Exception:
                 print(f"  - {server}: unknown port")
 

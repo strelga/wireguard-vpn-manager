@@ -1,0 +1,9 @@
+server:
+  name: test-server
+  url: vpn.example.com
+  port: 51821
+  subnet: 10.14.14.0/24
+  dns: 8.8.8.8
+  allowed_ips: 192.168.1.0/24
+  peers: 5
+  public_key: public_key

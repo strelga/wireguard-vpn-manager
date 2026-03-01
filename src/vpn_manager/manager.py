@@ -11,11 +11,11 @@ import os
 import sys
 from pathlib import Path
 
-from clients import ClientManager
-from keys import KeyManager
-from servers import ServerCreateConfig, ServerManager
-from services import ServiceManager
-from utils import Logger
+from .clients import ClientManager
+from .keys import KeyManager
+from .servers.servers import ServerCreateConfigData, ServerManager
+from .services import ServiceManager
+from .utils import Logger
 
 
 def _create_parser() -> argparse.ArgumentParser:
@@ -106,8 +106,11 @@ Examples:
 
     return parser
 
+def _parse_argument(args: argparse.Namespace, arg_name: str) -> str | None:
+    return getattr(args, arg_name, None)
 
-def _handle_service_command(command: str, server_name: str | None) -> bool:
+
+def _handle_service_command(command: str, server_name: str | None) -> None:
     """Handle service management commands"""
     service_manager = ServiceManager()
 
@@ -119,42 +122,56 @@ def _handle_service_command(command: str, server_name: str | None) -> bool:
             Logger.info("Available servers:")
             for server in available_servers:
                 Logger.info(f"  - {server}")
-            return False
+            raise ValueError(f"Unknown server: {server_name}")
 
     Logger.header(
         f"{command.upper()} SERVICES{' - ' + server_name.upper() if server_name else ''}"
     )
 
     if command == "start":
-        success = service_manager.start(server_name)
-        if success and not server_name:
+        if not service_manager.start(server_name):
+            raise RuntimeError("Failed to start services")
+        if not server_name:
             service_manager.show_info()
     elif command == "stop":
-        success = service_manager.stop(server_name)
+        if not service_manager.stop(server_name):
+            raise RuntimeError("Failed to stop services")
     elif command == "restart":
-        success = service_manager.restart(server_name)
+        if not service_manager.restart(server_name):
+            raise RuntimeError("Failed to restart services")
     elif command == "status":
-        success = service_manager.status(server_name)
-        if success and not server_name:
+        if not service_manager.status(server_name):
+            raise RuntimeError("Failed to get status")
+        if not server_name:
             service_manager.show_info()
     elif command == "generate":
         Logger.header("GENERATING DOCKER-COMPOSE CONFIGURATION")
         server_manager = ServerManager()
-        success = server_manager.build()
+        if not server_manager.build():
+            raise RuntimeError("Failed to generate docker-compose configuration")
 
-    return success
 
-
-def _handle_client_command(command: str, server: str, client: str | None = None) -> bool:
+def _handle_client_command(command: str, server: str | None, client: str | None = None) -> None:
     """Handle client management commands"""
+    if server is None:
+        raise ValueError("Server name is required for client commands")
+
     client_manager = ClientManager()
 
     if command == "add":
+        if client is None:
+            Logger.error("Client name is required for add command")
+            raise ValueError("Client name is required for add command")
         Logger.header(f"ADDING CLIENT '{client}' TO SERVER '{server}'")
-        return client_manager.add(server, client)
+        if not client_manager.add(server, client):
+            raise RuntimeError(f"Failed to add client '{client}' to server '{server}'")
     elif command == "remove":
+        if client is None:
+            Logger.error("Client name is required for remove command")
+            raise ValueError("Client name is required for remove command")
         Logger.header(f"REMOVING CLIENT '{client}' FROM SERVER '{server}'")
-        return client_manager.remove(server, client)
+        if not client_manager.remove(server, client):
+            raise RuntimeError(f"Failed to remove client '{client}' from server '{server}'")
     elif command == "list":
         if server:
             Logger.header(f"LISTING CLIENTS - {server.upper()}")
@@ -162,25 +179,23 @@ def _handle_client_command(command: str, server: str, client: str | None = None)
         else:
             Logger.header("LISTING ALL CLIENTS")
             client_manager.list_all_clients()
-        return True
-
-    return False
 
 
-def _handle_key_command(output_dir: str | None) -> bool:
+def _handle_key_command(output_dir: str | None) -> None:
     """Handle key management commands"""
     Logger.header("GENERATING WIREGUARD KEYS")
     key_manager = KeyManager()
-    return key_manager.generate(output_dir)
+    if not key_manager.generate(output_dir):
+        raise RuntimeError("Failed to generate WireGuard keys")
 
 
-def _handle_server_command(command: str, args) -> bool:
+def _handle_server_command(command: str, args) -> None:
     """Handle server management commands"""
     server_manager = ServerManager()
 
     if command == "create":
         Logger.header(f"CREATING SERVER '{args.name}'")
-        config = ServerCreateConfig(
+        config = ServerCreateConfigData(
             name=args.name,
             url=args.url,
             port=args.port,
@@ -189,16 +204,15 @@ def _handle_server_command(command: str, args) -> bool:
             allowed_ips=args.allowed_ips,
             peers=args.peers,
         )
-        return server_manager.create_server(config)
+        if not server_manager.create_server(config):
+            raise RuntimeError(f"Failed to create server '{args.name}'")
     elif command == "list":
         Logger.header("LISTING SERVERS")
         server_manager.list_servers()
-        return True
     elif command == "remove":
         Logger.header(f"REMOVING SERVER '{args.name}'")
-        return server_manager.remove_server(args.name, args.force)
-
-    return False
+        if not server_manager.remove_server(args.name, args.force):
+            raise RuntimeError(f"Failed to remove server '{args.name}'")
 
 
 def main():
@@ -210,26 +224,25 @@ def main():
     os.chdir(project_root)
 
     try:
-        success = True
-
         # Service management commands
         if args.group == "service":
-            success = _handle_service_command(args.command, args.server_name)
+            server_name = _parse_argument(args, 'server_name')
+            _handle_service_command(args.command, server_name)
 
         # Client management commands
         elif args.group == "client":
-            success = _handle_client_command(args.command, args.server, args.client)
+            server = _parse_argument(args, 'server')
+            client = _parse_argument(args, 'client')
+            _handle_client_command(args.command, server, client)
 
         # Key management commands
         elif args.group == "key":
-            success = _handle_key_command(args.output_dir)
+            output_dir = _parse_argument(args, 'output_dir')
+            _handle_key_command(output_dir)
 
         # Server management commands
         elif args.group == "server":
-            success = _handle_server_command(args.command, args)
-
-        if not success:
-            sys.exit(1)
+            _handle_server_command(args.command, args)
 
     except Exception as e:
         Logger.error(f"Command failed: {e}")

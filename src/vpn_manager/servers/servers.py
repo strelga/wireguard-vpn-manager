@@ -5,36 +5,48 @@ WireGuard Server Management Module
 
 import ipaddress
 import shutil
-from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict
 
 import yaml
 
-from utils import Color, KeyGenerator, Logger
+from ..utils import (
+    Color,
+    KeyGenerator,
+    Logger,
+)
+from .utils import ServerConfigData, ServerCreateConfigData
 
 
-@dataclass
-class ServerCreateConfig:
-    """Input configuration for creating a server"""
-    name: str
-    url: str
-    port: int
-    subnet: str
-    dns: str = "1.1.1.1,8.8.8.8"
-    allowed_ips: str = "0.0.0.0/0"
-    peers: int = 1
+class NetworkConfig(TypedDict):
+    """Network configuration for docker-compose"""
+    driver: str
 
 
-@dataclass
-class ServerConfig(ServerCreateConfig):
-    """Complete server configuration with public key"""
-    public_key: str
+class ServiceConfig(TypedDict):
+    """Service configuration for docker-compose"""
+    image: str
+    container_name: str
+    cap_add: list[str]
+    environment: list[str]
+    volumes: list[str]
+    ports: list[str]
+    sysctls: list[str]
+    restart: str
+    networks: list[str]
+
+
+class DockerComposeConfig(TypedDict):
+    """Docker-compose configuration structure"""
+    version: str
+    services: dict[str, ServiceConfig]
+    networks: dict[str, NetworkConfig]
 
 
 class ServerManager:
     """WireGuard server management utility"""
 
-    def create_server(self, config: ServerCreateConfig) -> bool:
+    def create_server(self, config: ServerCreateConfigData) -> bool:
         """Create a new WireGuard server from template"""
         try:
             # Validate server name
@@ -65,7 +77,7 @@ class ServerManager:
             server_private_key, server_public_key = KeyGenerator.generate_keypair()
 
             # Create complete server configuration
-            complete_config = ServerConfig(
+            complete_config = ServerConfigData(
                 name=config.name,
                 url=config.url,
                 port=config.port,
@@ -109,7 +121,7 @@ class ServerManager:
             Logger.error(f"Failed to create server: {e}")
             return False
 
-    def _create_server_config_yml(self, config: ServerConfig) -> None:
+    def _create_server_config_yml(self, config: ServerConfigData) -> None:
         """Create config.yml for the server"""
         config_dict = {
             "server": {
@@ -138,7 +150,7 @@ class ServerManager:
                 Logger.error("Servers directory not found")
                 return False
 
-            generated_compose = {
+            generated_compose: DockerComposeConfig = {
                 "version": "3.8",
                 "services": {},
                 "networks": {

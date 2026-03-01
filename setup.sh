@@ -3,9 +3,9 @@ set -e
 
 echo "🚀 Setting up WireGuard VPN Manager with pipx..."
 
-# Check if we're in the right directory (should have vpn-manager subdirectory)
-if [ ! -d "vpn-manager" ] || [ ! -f "vpn-manager/pyproject.toml" ]; then
-    echo "❌ Error: vpn-manager/pyproject.toml not found. Run this script from the project root directory."
+# Check if we're in the right directory (should have pyproject.toml and src/vpn_manager)
+if [ ! -f "pyproject.toml" ] || [ ! -d "src/vpn_manager" ]; then
+    echo "❌ Error: pyproject.toml or src/vpn_manager not found. Run this script from the project root directory."
     exit 1
 fi
 
@@ -78,11 +78,9 @@ if pipx list | grep -q "wireguard-vpn-manager"; then
     pipx uninstall wireguard-vpn-manager
 fi
 
-# Change to vpn-manager directory and install in editable mode with development dependencies
+# Install in editable mode with development dependencies
 echo "📦 Installing in development mode..."
-cd vpn-manager
 pipx install --editable ".[dev]"
-cd ..
 
 echo ""
 echo "✅ Setup complete!"

@@ -3,12 +3,7 @@
 Common utilities for WireGuard VPN management scripts
 """
 
-import ipaddress
 import subprocess
-from pathlib import Path
-from typing import Any
-
-import yaml
 
 
 class Color:
@@ -46,144 +41,6 @@ class Logger:
     @staticmethod
     def header(message: str) -> None:
         print(f"\n{Color.BLUE}=== {message} ==={Color.NC}\n")
-
-
-class WireGuardConfig:
-    """WireGuard configuration management"""
-
-    def __init__(self, server_name: str):
-        self.server_name = server_name
-        self.server_dir = Path(f"servers/{server_name}")
-        self.config_dir = self.server_dir / "config"
-        self.clients_dir = self.server_dir / "clients"
-        self.wg_config_file = self.config_dir / "wg_confs" / "wg0.conf"
-        self.docker_compose_file = self.server_dir / "docker-compose.yml"
-
-        # Ensure directories exist
-        self.config_dir.mkdir(parents=True, exist_ok=True)
-        self.clients_dir.mkdir(parents=True, exist_ok=True)
-        (self.config_dir / "wg_confs").mkdir(parents=True, exist_ok=True)
-
-    def get_server_info(self) -> dict[str, Any]:
-        """Get server configuration from docker-compose.yml and .env"""
-        if not self.docker_compose_file.exists():
-            raise FileNotFoundError(
-                f"Docker compose file not found: {self.docker_compose_file}"
-            )
-
-        # Load docker-compose.yml
-        with open(self.docker_compose_file) as f:
-            compose_config = yaml.safe_load(f)
-
-        # Find the wireguard service (should be the first/only service)
-        services = compose_config.get("services", {})
-        if not services:
-            raise ValueError(f"No services found in {self.docker_compose_file}")
-
-        # Get the first service (wireguard service)
-        service_name = list(services.keys())[0]
-        service_config = services[service_name]
-
-        # Extract environment variables
-        env_vars = {}
-        env_list = service_config.get("environment", [])
-
-        for env_item in env_list:
-            if isinstance(env_item, str):
-                if "=" in env_item:
-                    key, value = env_item.split("=", 1)
-                    env_vars[key.strip()] = value.strip()
-                else:
-                    # Environment variable reference like ${VAR}
-                    env_vars[env_item.strip()] = self._resolve_env_var(env_item.strip())
-            elif isinstance(env_item, dict):
-                env_vars.update(env_item)
-
-        # Extract port mapping
-        ports = service_config.get("ports", [])
-        server_port = None
-        for port_mapping in ports:
-            if isinstance(port_mapping, str) and "/udp" in port_mapping:
-                # Format: "51820:51820/udp"
-                external_port = port_mapping.split(":")[0]
-                server_port = int(external_port)
-                break
-
-        # Build server info
-        server_info = {
-            "subnet": env_vars.get("INTERNAL_SUBNET", ""),
-            "server_url": self._resolve_env_var(env_vars.get("SERVERURL", "")),
-            "server_port": server_port or int(env_vars.get("SERVERPORT", 51820)),
-            "dns": env_vars.get("PEERDNS", ""),
-            "allowed_ips": env_vars.get("ALLOWEDIPS", ""),
-            "container_name": service_config.get("container_name", service_name),
-        }
-
-        return server_info
-
-    def _resolve_env_var(self, value: str) -> str:
-        """Resolve environment variable references like ${VAR}"""
-        if not value or not value.startswith("${") or not value.endswith("}"):
-            return value
-
-        var_name = value[2:-1]  # Remove ${ and }
-        env_vars = self._load_env_vars()
-        return env_vars.get(var_name, value)
-
-    def _load_env_vars(self) -> dict[str, str]:
-        """Load environment variables from .env file"""
-        env_vars = {}
-        env_file = Path(".env")
-
-        if env_file.exists():
-            with open(env_file) as f:
-                for line in f:
-                    stripped_line = line.strip()
-                    if stripped_line and not stripped_line.startswith("#") and "=" in stripped_line:
-                        key, value = stripped_line.split("=", 1)
-                        env_vars[key.strip()] = value.strip()
-
-        return env_vars
-
-    def get_next_client_ip(self) -> str:
-        """Find next available IP address in server subnet"""
-        server_info = self.get_server_info()
-        network = ipaddress.IPv4Network(server_info["subnet"])
-
-        # Server uses .1, start from .2
-        used_ips = {network.network_address + 1}  # Server IP
-
-        # Parse existing config to find used IPs
-        if self.wg_config_file.exists():
-            with open(self.wg_config_file) as f:
-                content = f.read()
-
-            # Find all Address lines in [Peer] sections
-            lines = content.split("\n")
-            in_peer = False
-
-            for line in lines:
-                stripped_line = line.strip()
-                if stripped_line.startswith("[Peer]"):
-                    in_peer = True
-                elif stripped_line.startswith("[") and stripped_line != "[Peer]":
-                    in_peer = False
-                elif in_peer and stripped_line.startswith("Address"):
-                    # Extract IP from "Address = 10.13.13.2/32"
-                    try:
-                        ip_str = stripped_line.split("=")[1].strip().split("/")[0]
-                        used_ips.add(ipaddress.IPv4Address(ip_str))
-                    except (ValueError, IndexError):
-                        continue
-
-        # Find first available IP
-        for ip in network.hosts():
-            if ip not in used_ips:
-                return str(ip)
-
-        raise RuntimeError(
-            f"No available IP addresses in subnet {server_info['subnet']}"
-        )
 
 
 class KeyGenerator:
@@ -375,21 +232,6 @@ class QRCodeGenerator:
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
-
-
-def validate_server_name(server_name: str) -> bool:
-    """Validate server name"""
-    server_dir = Path(f"servers/{server_name}")
-    if not server_dir.exists():
-        Logger.error(f"Server '{server_name}' not found")
-        Logger.info("Available servers:")
-        servers_dir = Path("servers")
-        if servers_dir.exists():
-            for server in servers_dir.iterdir():
-                if server.is_dir():
-                    Logger.info(f"  - {server.name}")
-        return False
-    return True
 
 
 def validate_client_name(client_name: str) -> bool:

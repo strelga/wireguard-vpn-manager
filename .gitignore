@@ -31,8 +31,5 @@ htmlcov/
 # Logs
 *.log
 
-# Docker
-.env
-
 # Servers
-servers
+/servers

@@ -5,23 +5,22 @@ WireGuard Client Management Module
 
 import subprocess
 
-from services import ServiceManager
-from utils import (
+from .servers.utils import ServerConfig, validate_server_name
+from .services import ServiceManager
+from .utils import (
     Color,
     DockerManager,
     KeyGenerator,
     Logger,
     QRCodeGenerator,
-    WireGuardConfig,
     validate_client_name,
-    validate_server_name,
 )
 
 
 class ClientManager:
     """WireGuard client management utility"""
 
-    def _get_server_public_key(self, wg_config: WireGuardConfig) -> str:
+    def _get_server_public_key(self, wg_config: ServerConfig) -> str:
         """Extract server public key from existing configuration"""
         if not wg_config.wg_config_file.exists():
             raise FileNotFoundError(
@@ -78,7 +77,7 @@ class ClientManager:
         raise ValueError("Server private key not found in configuration")
 
     def _check_client_exists(
-        self, wg_config: WireGuardConfig, client_name: str
+        self, wg_config: ServerConfig, client_name: str
     ) -> bool:
         """Check if client already exists"""
         client_config_file = wg_config.clients_dir / f"{client_name}.conf"
@@ -96,7 +95,7 @@ class ClientManager:
 
     def _add_peer_to_server_config(
         self,
-        wg_config: WireGuardConfig,
+        wg_config: ServerConfig,
         client_name: str,
         client_public_key: str,
         client_ip: str,
@@ -117,7 +116,7 @@ AllowedIPs = {client_ip}/32
 
     def _create_client_config(
         self,
-        wg_config: WireGuardConfig,
+        wg_config: ServerConfig,
         client_name: str,
         client_private_key: str,
         client_ip: str,
@@ -129,12 +128,12 @@ AllowedIPs = {client_ip}/32
         client_config = f"""[Interface]
 PrivateKey = {client_private_key}
 Address = {client_ip}/32
-DNS = {server_info["dns"]}
+DNS = {server_info.dns}
 
 [Peer]
 PublicKey = {server_public_key}
-Endpoint = {server_info["server_url"]}:{server_info["server_port"]}
-AllowedIPs = {server_info["allowed_ips"]}
+Endpoint = {server_info.url}:{server_info.port}
+AllowedIPs = {server_info.allowed_ips}
 PersistentKeepalive = 25
 """
 
@@ -160,7 +159,7 @@ PersistentKeepalive = 25
                 return False
 
             # Initialize configuration
-            wg_config = WireGuardConfig(server_name)
+            wg_config = ServerConfig(server_name)
 
             # Check if client already exists
             if self._check_client_exists(wg_config, client_name):
@@ -169,9 +168,9 @@ PersistentKeepalive = 25
 
             # Get server info
             server_info = wg_config.get_server_info()
-            Logger.info(f"Server subnet: {server_info['subnet']}")
+            Logger.info(f"Server subnet: {server_info.subnet}")
             Logger.info(
-                f"Server endpoint: {server_info['server_url']}:{server_info['server_port']}"
+                f"Server endpoint: {server_info.url}:{server_info.port}"
             )
 
             # Generate client keys
@@ -201,7 +200,7 @@ PersistentKeepalive = 25
 
             # Restart container
             Logger.info("Restarting container...")
-            container_name = server_info["container_name"]
+            container_name = server_info.container_name
             if DockerManager.restart_container(container_name):
                 Logger.success(f"Container '{container_name}' restarted successfully")
             else:
@@ -231,7 +230,7 @@ PersistentKeepalive = 25
             return False
 
     def _remove_peer_from_server_config(
-        self, wg_config: WireGuardConfig, client_name: str
+        self, wg_config: ServerConfig, client_name: str
     ) -> bool:
         """Remove peer configuration from server config file"""
         if not wg_config.wg_config_file.exists():
@@ -291,7 +290,7 @@ PersistentKeepalive = 25
         return True
 
     def _remove_client_files(
-        self, wg_config: WireGuardConfig, client_name: str
+        self, wg_config: ServerConfig, client_name: str
     ) -> bool:
         """Remove client configuration files"""
         client_config_file = wg_config.clients_dir / f"{client_name}.conf"
@@ -321,7 +320,7 @@ PersistentKeepalive = 25
         else:
             Logger.info("No clients found")
 
-    def _perform_removal(self, wg_config: WireGuardConfig, client_name: str) -> bool:
+    def _perform_removal(self, wg_config: ServerConfig, client_name: str) -> bool:
         """Perform the actual removal of client data"""
         # Remove peer from server config
         Logger.info("Removing peer from server configuration...")
@@ -367,7 +366,7 @@ PersistentKeepalive = 25
                 return False
 
             # Initialize configuration
-            wg_config = WireGuardConfig(server_name)
+            wg_config = ServerConfig(server_name)
 
             # Check if client exists
             if not self._check_client_exists(wg_config, client_name):
@@ -383,7 +382,7 @@ PersistentKeepalive = 25
                 return False
 
             # Restart container
-            self._restart_after_removal(server_info["container_name"])
+            self._restart_after_removal(server_info.container_name)
 
             # Display results
             Logger.success(f"Client '{client_name}' removed successfully!")
@@ -400,7 +399,7 @@ PersistentKeepalive = 25
         if not validate_server_name(server_name):
             return []
 
-        wg_config = WireGuardConfig(server_name)
+        wg_config = ServerConfig(server_name)
         clients = []
 
         # From client config files

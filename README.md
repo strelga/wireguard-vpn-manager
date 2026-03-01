@@ -11,37 +11,11 @@ A comprehensive WireGuard VPN management system with Docker Compose support for 
 - **Automated IP allocation**: Automatic assignment of client IP addresses
 - **Secure key management**: Automated WireGuard key pair generation
 
-## Project Structure
-
-```txt
-vpn/
-├── docker-compose.yml          # Main compose file with includes
-├── .env                        # Environment configuration
-├── servers/
-│   ├── server-1/
-│   │   ├── config.yml         # Server configuration file
-│   │   └── clients/           # Client configuration files
-│   └── ...
-└── vpn-manager/               # Unified management tool
-    ├── manager.py            # Main CLI interface
-    ├── utils.py               # Common utilities library
-    ├── services.py            # Service management
-    ├── clients.py             # Client management
-    ├── servers.py             # Server management
-    ├── keys.py                # Key generation
-    └── pyproject.toml         # Project configuration
-```
-
-## Prerequisites
-
-- **Docker** and **Docker Compose**
-- **Python 3.13+**
-- **qrencode** (optional, for QR code generation)
-- **WireGuard tools** (optional, for local key generation)
+## Installation
 
 ### Quick Setup with pipx (Recommended)
 
-1. **Setup the management environment:**
+Run the setup script from the project root:
 
 ```bash
 ./setup.sh
@@ -54,7 +28,14 @@ This will automatically:
 - Make the `vpn-manager` command available system-wide
 - Install development tools (ruff, mypy) globally
 
-1. **Install system dependencies (optional):**
+## Prerequisites
+
+- **Docker** and **Docker Compose**
+- **Python 3.13+**
+- **qrencode** (optional, for QR code generation)
+- **WireGuard tools** (optional, for local key generation)
+
+### Install system dependencies (optional)
 
 #### Ubuntu/Debian
 
@@ -157,7 +138,7 @@ vpn-manager client remove myserver phone
 vpn-manager client remove myserver laptop
 
 # List clients
-vpn-manager client list [server_name]
+vpn-manager client list myserver
 ```
 
 ### Key Generation
@@ -207,6 +188,32 @@ When you add a client, the system:
 3. Connect to the VPN
 
 ## Troubleshooting
+
+### Installation Issues
+
+#### Command not found
+
+```bash
+# Reinstall with pipx
+pipx install --editable ".[dev]" --force
+```
+
+#### Import errors
+
+```bash
+# Reinstall the package
+pipx install --editable ".[dev]" --force
+```
+
+### Runtime Issues
+
+For issues and questions:
+
+1. Check the troubleshooting section above
+2. Review container logs for error messages
+3. Verify your server configurations in `servers/*/config.yml`
+4. Ensure all prerequisites are installed correctly
+5. Open an issue on [GitHub](https://github.com/strelga/wireguard-vpn-manager/issues)
 
 ### Check container logs
 
@@ -292,15 +299,35 @@ Monitor specific container:
 docker-compose logs -f wireguard-myserver
 ```
 
-## Support
+## Development
 
-For issues and questions:
+### Code Quality Tools
 
-1. Check the troubleshooting section above
-2. Review container logs for error messages
-3. Verify your server configurations in `servers/*/config.yml`
-4. Ensure all prerequisites are installed correctly
-5. Open an issue on [GitHub](https://github.com/strelga/wireguard-vpn-manager/issues)
+```bash
+# Run linter
+make lint
+
+# Format code
+make format
+
+# Type checking
+make typecheck
+
+# Run all checks
+make check-all
+
+# Run tests
+make test
+
+# Run tests with coverage
+make test-cov
+```
+
+## Uninstalling
+
+```bash
+pipx uninstall wireguard-vpn-manager
+```
 
 ## Author
 

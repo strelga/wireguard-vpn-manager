@@ -1,19 +1,24 @@
 {
     "cSpell.words": [
+        "addopts",
         "ALLOWEDIPS",
         "ansiutf",
+        "asctime",
         "confs",
         "direnv",
         "ensurepath",
+        "filterwarnings",
         "genkey",
         "htmlcov",
         "isort",
         "Keepalive",
         "keypair",
+        "levelname",
         "mypy",
         "PEERDNS",
         "PGID",
         "pipx",
+        "poethepoet",
         "POSTROUTING",
         "pprint",
         "prefixlen",
@@ -25,18 +30,27 @@
         "pypackages",
         "pyproject",
         "pytest",
+        "pythonpath",
         "pytype",
         "pyupgrade",
         "qrencode",
+        "runpip",
         "SERVERPORT",
         "SERVERURL",
         "setuptools",
         "sysctls",
+        "testpaths",
         "usermod",
         "venv"
     ],
-    "python.defaultInterpreterPath": "~/.local/pipx/venvs/wireguard-vpn-manager/bin/python",
+    "python.defaultInterpreterPath": "~/.local/pipx/venvs/wireguard-vpn-manager/bin/python3.14",
     "python.analysis.extraPaths": [
-        "~/.local/pipx/venvs/wireguard-vpn-manager/lib/python3.14/site-packages"
-    ]
+        "~/.local/pipx/venvs/wireguard-vpn-manager/lib/python3.14/site-packages",
+        "${workspaceFolder}/vpn-manager"
+    ],
+    "python.testing.pytestArgs": [
+        "vpn-manager"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
 }
