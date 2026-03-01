@@ -1,0 +1,9 @@
+version: '3.8'
+
+include:
+  - servers/internet/docker-compose.yml
+  - servers/tunnel/docker-compose.yml
+
+networks:
+  wireguard-net:
+    driver: bridge
