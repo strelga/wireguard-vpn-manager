@@ -4,9 +4,7 @@ WireGuard Services Management Module
 """
 
 import subprocess
-import sys
 from pathlib import Path
-from typing import List, Optional
 
 from utils import Color, DockerManager, Logger, WireGuardConfig
 
@@ -36,7 +34,7 @@ class ServiceManager:
                             f"wireguard-{server_dir.name}"
                         )
 
-    def get_available_servers(self) -> List[str]:
+    def get_available_servers(self) -> list[str]:
         """Get list of available servers"""
         servers = []
         servers_dir = Path("servers")
@@ -46,7 +44,7 @@ class ServiceManager:
                     servers.append(server_dir.name)
         return sorted(servers)
 
-    def start(self, server_name: Optional[str] = None) -> bool:
+    def start(self, server_name: str | None = None) -> bool:
         """Start services"""
         try:
             if server_name:
@@ -71,7 +69,7 @@ class ServiceManager:
             Logger.error(f"Failed to start services: {e}")
             return False
 
-    def stop(self, server_name: Optional[str] = None) -> bool:
+    def stop(self, server_name: str | None = None) -> bool:
         """Stop services"""
         try:
             if server_name:
@@ -94,7 +92,7 @@ class ServiceManager:
             Logger.error(f"Failed to stop services: {e}")
             return False
 
-    def restart(self, server_name: Optional[str] = None) -> bool:
+    def restart(self, server_name: str | None = None) -> bool:
         """Restart services"""
         try:
             if server_name:
@@ -119,7 +117,7 @@ class ServiceManager:
             Logger.error(f"Failed to restart services: {e}")
             return False
 
-    def status(self, server_name: Optional[str] = None) -> bool:
+    def status(self, server_name: str | None = None) -> bool:
         """Show service status"""
         try:
             if server_name:

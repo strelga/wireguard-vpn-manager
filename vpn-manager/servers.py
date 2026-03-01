@@ -3,7 +3,9 @@
 WireGuard Server Management Module
 """
 
-import sys
+import ipaddress
+import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -11,24 +13,34 @@ import yaml
 from utils import Color, KeyGenerator, Logger
 
 
+@dataclass
+class ServerCreateConfig:
+    """Input configuration for creating a server"""
+    name: str
+    url: str
+    port: int
+    subnet: str
+    dns: str = "1.1.1.1,8.8.8.8"
+    allowed_ips: str = "0.0.0.0/0"
+    peers: int = 1
+
+
+@dataclass
+class ServerConfig(ServerCreateConfig):
+    """Complete server configuration with public key"""
+    public_key: str
+
+
 class ServerManager:
     """WireGuard server management utility"""
 
-    def create_server(
-        self,
-        server_name: str,
-        server_url: str,
-        port: int,
-        subnet: str,
-        dns: str = "1.1.1.1,8.8.8.8",
-        allowed_ips: str = "0.0.0.0/0",
-    ) -> bool:
+    def create_server(self, config: ServerCreateConfig) -> bool:
         """Create a new WireGuard server from template"""
         try:
             # Validate server name
             if (
-                not server_name
-                or not server_name.replace("-", "").replace("_", "").isalnum()
+                not config.name
+                or not config.name.replace("-", "").replace("_", "").isalnum()
             ):
                 Logger.error(
                     "Server name must contain only alphanumeric characters, hyphens, and underscores"
@@ -36,12 +48,12 @@ class ServerManager:
                 return False
 
             # Check if server already exists
-            server_dir = Path(f"servers/{server_name}")
+            server_dir = Path(f"servers/{config.name}")
             if server_dir.exists():
-                Logger.error(f"Server '{server_name}' already exists")
+                Logger.error(f"Server '{config.name}' already exists")
                 return False
 
-            Logger.info(f"Creating server '{server_name}'...")
+            Logger.info(f"Creating server '{config.name}'...")
 
             # Create directory structure
             server_dir.mkdir(parents=True, exist_ok=True)
@@ -52,33 +64,43 @@ class ServerManager:
             Logger.info("Generating server key pair...")
             server_private_key, server_public_key = KeyGenerator.generate_keypair()
 
-            # Create docker-compose.yml
-            self._create_docker_compose(
-                server_name, server_url, port, subnet, dns, allowed_ips
+            # Create complete server configuration
+            complete_config = ServerConfig(
+                name=config.name,
+                url=config.url,
+                port=config.port,
+                subnet=config.subnet,
+                dns=config.dns,
+                allowed_ips=config.allowed_ips,
+                peers=config.peers,
+                public_key=server_public_key,
             )
 
+            # Create config.yml with server configuration
+            self._create_server_config_yml(complete_config)
+
             # Create initial server configuration
-            self._create_server_config(server_name, server_private_key, subnet)
+            self._create_wg_server_config(config.name, server_private_key, config.subnet)
 
-            # Update main docker-compose.yml
-            self._update_main_compose(server_name)
+            # Generate docker-compose.generated.yml
+            Logger.info("Generating docker-compose configuration...")
+            self.build()
 
-            Logger.success(f"Server '{server_name}' created successfully!")
+            Logger.success(f"Server '{config.name}' created successfully!")
 
             print(f"\n{Color.BLUE}Server Configuration:{Color.NC}")
-            print(f"  Name: {server_name}")
-            print(f"  URL: {server_url}")
-            print(f"  Port: {port}")
-            print(f"  Subnet: {subnet}")
-            print(f"  DNS: {dns}")
-            print(f"  Allowed IPs: {allowed_ips}")
+            print(f"  Name: {config.name}")
+            print(f"  URL: {config.url}")
+            print(f"  Port: {config.port}")
+            print(f"  Subnet: {config.subnet}")
+            print(f"  DNS: {config.dns}")
+            print(f"  Allowed IPs: {config.allowed_ips}")
             print(f"  Directory: {server_dir}")
 
             print(f"\n{Color.BLUE}Next steps:{Color.NC}")
-            print("  1. Update .env file with server configuration")
-            print(f"  2. Start the server: python3 manager start {server_name}")
+            print(f"  1. Start the server: vpn-manager start {config.name}")
             print(
-                f"  3. Add clients: python3 manager add-client {server_name} <client_name>"
+                f"  2. Add clients: vpn-manager add-client {config.name} <client_name>"
             )
 
             return True
@@ -87,35 +109,84 @@ class ServerManager:
             Logger.error(f"Failed to create server: {e}")
             return False
 
-    def _create_docker_compose(
-        self,
-        server_name: str,
-        server_url: str,
-        port: int,
-        subnet: str,
-        dns: str,
-        allowed_ips: str,
-    ) -> None:
-        """Create docker-compose.yml for the server"""
-        compose_config = {
-            "services": {
-                f"wireguard-{server_name}": {
+    def _create_server_config_yml(self, config: ServerConfig) -> None:
+        """Create config.yml for the server"""
+        config_dict = {
+            "server": {
+                "name": config.name,
+                "url": config.url,
+                "port": config.port,
+                "subnet": config.subnet,
+                "dns": config.dns,
+                "allowed_ips": config.allowed_ips,
+                "peers": config.peers,
+                "public_key": config.public_key,
+            }
+        }
+
+        config_file = Path(f"servers/{config.name}/config.yml")
+        with open(config_file, "w") as f:
+            yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False)
+
+        Logger.success(f"Created config.yml for server '{config.name}'")
+
+    def build(self) -> bool:
+        """Build docker-compose.generated.yml from all server configs"""
+        try:
+            servers_dir = Path("servers")
+            if not servers_dir.exists():
+                Logger.error("Servers directory not found")
+                return False
+
+            generated_compose = {
+                "version": "3.8",
+                "services": {},
+                "networks": {
+                    "wireguard-net": {
+                        "driver": "bridge"
+                    }
+                }
+            }
+
+            # Process each server directory
+            for server_dir in servers_dir.iterdir():
+                if not server_dir.is_dir():
+                    continue
+
+                config_file = server_dir / "config.yml"
+                if not config_file.exists():
+                    Logger.warning(f"No config.yml found for server '{server_dir.name}', skipping")
+                    continue
+
+                # Load server configuration
+                with open(config_file) as f:
+                    server_config = yaml.safe_load(f)
+
+                server = server_config["server"]
+                server_name = server["name"]
+
+                # Create service configuration
+                service_name = f"wireguard-{server_name}"
+                generated_compose["services"][service_name] = {
                     "image": "linuxserver/wireguard:latest",
-                    "container_name": f"wireguard-{server_name}",
+                    "container_name": service_name,
                     "cap_add": ["NET_ADMIN", "SYS_MODULE"],
                     "environment": [
                         "PUID=1000",
                         "PGID=1000",
                         "TZ=Europe/Moscow",
-                        f"SERVERURL=${{{server_name.upper()}_SERVER_URL}}",
-                        f"SERVERPORT={port}",
-                        f"PEERS=${{{server_name.upper()}_PEERS}}",
-                        f"PEERDNS={dns}",
-                        f"INTERNAL_SUBNET={subnet}",
-                        f"ALLOWEDIPS={allowed_ips}",
+                        f"SERVERURL={server['url']}",
+                        f"SERVERPORT={server['port']}",
+                        f"PEERS={server['peers']}",
+                        f"PEERDNS={server['dns']}",
+                        f"INTERNAL_SUBNET={server['subnet']}",
+                        f"ALLOWEDIPS={server['allowed_ips']}",
                     ],
-                    "volumes": ["./config:/config", "/lib/modules:/lib/modules:ro"],
-                    "ports": [f"{port}:{port}/udp"],
+                    "volumes": [
+                        f"./{server_name}/config:/config",
+                        "/lib/modules:/lib/modules:ro"
+                    ],
+                    "ports": [f"{server['port']}:51820/udp"],
                     "sysctls": [
                         "net.ipv4.conf.all.src_valid_mark=1",
                         "net.ipv4.ip_forward=1",
@@ -123,16 +194,20 @@ class ServerManager:
                     "restart": "unless-stopped",
                     "networks": ["wireguard-net"],
                 }
-            }
-        }
 
-        compose_file = Path(f"servers/{server_name}/docker-compose.yml")
-        with open(compose_file, "w") as f:
-            yaml.dump(compose_config, f, default_flow_style=False, sort_keys=False)
+            # Write generated compose file
+            generated_file = Path("servers/docker-compose.generated.yml")
+            with open(generated_file, "w") as f:
+                yaml.dump(generated_compose, f, default_flow_style=False, sort_keys=False)
 
-        Logger.success(f"Created docker-compose.yml for server '{server_name}'")
+            Logger.success(f"Generated docker-compose.generated.yml with {len(generated_compose['services'])} server(s)")
+            return True
 
-    def _create_server_config(
+        except Exception as e:
+            Logger.error(f"Failed to build docker-compose: {e}")
+            return False
+
+    def _create_wg_server_config(
         self, server_name: str, private_key: str, subnet: str
     ) -> None:
         """Create initial WireGuard server configuration"""
@@ -140,8 +215,6 @@ class ServerManager:
         config_dir.mkdir(parents=True, exist_ok=True)
 
         # Extract server IP from subnet (first usable IP)
-        import ipaddress
-
         network = ipaddress.IPv4Network(subnet)
         server_ip = str(network.network_address + 1)
 
@@ -162,33 +235,6 @@ PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACC
 
         Logger.success(f"Created server configuration for '{server_name}'")
 
-    def _update_main_compose(self, server_name: str) -> None:
-        """Update main docker-compose.yml to include new server"""
-        main_compose_file = Path("docker-compose.yml")
-
-        if main_compose_file.exists():
-            with open(main_compose_file) as f:
-                compose_config = yaml.safe_load(f)
-        else:
-            compose_config = {
-                "version": "3.8",
-                "include": [],
-                "networks": {"wireguard-net": {"driver": "bridge"}},
-            }
-
-        # Add include for new server
-        new_include = f"servers/{server_name}/docker-compose.yml"
-        if "include" not in compose_config:
-            compose_config["include"] = []
-
-        if new_include not in compose_config["include"]:
-            compose_config["include"].append(new_include)
-
-        # Write updated config
-        with open(main_compose_file, "w") as f:
-            yaml.dump(compose_config, f, default_flow_style=False, sort_keys=False)
-
-        Logger.success("Updated main docker-compose.yml")
 
     def list_servers(self) -> None:
         """List all available servers"""
@@ -205,19 +251,14 @@ PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACC
         if servers:
             Logger.success("Available servers:")
             for server in sorted(servers):
-                server_compose = Path(f"servers/{server}/docker-compose.yml")
-                if server_compose.exists():
+                server_config = Path(f"servers/{server}/config.yml")
+                if server_config.exists():
                     try:
-                        with open(server_compose) as f:
+                        with open(server_config) as f:
                             config = yaml.safe_load(f)
 
-                        # Extract port from first service
-                        service_name = list(config["services"].keys())[0]
-                        service_config = config["services"][service_name]
-                        ports = service_config.get("ports", [])
-                        port = ports[0].split(":")[0] if ports else "unknown"
-
-                        print(f"  - {server} (port: {port})")
+                        server_info = config["server"]
+                        print(f"  - {server} (url: {server_info['url']}, port: {server_info['port']}, subnet: {server_info['subnet']})")
                     except Exception:
                         print(f"  - {server} (configuration error)")
                 else:
@@ -257,12 +298,11 @@ PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACC
                     return False
 
             # Remove server directory
-            import shutil
-
             shutil.rmtree(server_dir)
 
-            # Update main docker-compose.yml
-            self._remove_from_main_compose(server_name)
+            # Regenerate docker-compose.generated.yml
+            Logger.info("Regenerating docker-compose configuration...")
+            self.build()
 
             Logger.success(f"Server '{server_name}' removed successfully")
             return True
@@ -271,23 +311,3 @@ PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACC
             Logger.error(f"Failed to remove server: {e}")
             return False
 
-    def _remove_from_main_compose(self, server_name: str) -> None:
-        """Remove server from main docker-compose.yml"""
-        main_compose_file = Path("docker-compose.yml")
-
-        if not main_compose_file.exists():
-            return
-
-        with open(main_compose_file) as f:
-            compose_config = yaml.safe_load(f)
-
-        # Remove include for server
-        server_include = f"servers/{server_name}/docker-compose.yml"
-        if "include" in compose_config and server_include in compose_config["include"]:
-            compose_config["include"].remove(server_include)
-
-        # Write updated config
-        with open(main_compose_file, "w") as f:
-            yaml.dump(compose_config, f, default_flow_style=False, sort_keys=False)
-
-        Logger.success("Updated main docker-compose.yml")

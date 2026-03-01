@@ -4,13 +4,9 @@ Common utilities for WireGuard VPN management scripts
 """
 
 import ipaddress
-import json
-import os
 import subprocess
-import sys
-from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import yaml
 
@@ -68,7 +64,7 @@ class WireGuardConfig:
         self.clients_dir.mkdir(parents=True, exist_ok=True)
         (self.config_dir / "wg_confs").mkdir(parents=True, exist_ok=True)
 
-    def get_server_info(self) -> Dict[str, Any]:
+    def get_server_info(self) -> dict[str, Any]:
         """Get server configuration from docker-compose.yml and .env"""
         if not self.docker_compose_file.exists():
             raise FileNotFoundError(
@@ -134,7 +130,7 @@ class WireGuardConfig:
         env_vars = self._load_env_vars()
         return env_vars.get(var_name, value)
 
-    def _load_env_vars(self) -> Dict[str, str]:
+    def _load_env_vars(self) -> dict[str, str]:
         """Load environment variables from .env file"""
         env_vars = {}
         env_file = Path(".env")
@@ -142,9 +138,9 @@ class WireGuardConfig:
         if env_file.exists():
             with open(env_file) as f:
                 for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        key, value = line.split("=", 1)
+                    stripped_line = line.strip()
+                    if stripped_line and not stripped_line.startswith("#") and "=" in stripped_line:
+                        key, value = stripped_line.split("=", 1)
                         env_vars[key.strip()] = value.strip()
 
         return env_vars
@@ -167,15 +163,15 @@ class WireGuardConfig:
             in_peer = False
 
             for line in lines:
-                line = line.strip()
-                if line.startswith("[Peer]"):
+                stripped_line = line.strip()
+                if stripped_line.startswith("[Peer]"):
                     in_peer = True
-                elif line.startswith("[") and line != "[Peer]":
+                elif stripped_line.startswith("[") and stripped_line != "[Peer]":
                     in_peer = False
-                elif in_peer and line.startswith("Address"):
+                elif in_peer and stripped_line.startswith("Address"):
                     # Extract IP from "Address = 10.13.13.2/32"
                     try:
-                        ip_str = line.split("=")[1].strip().split("/")[0]
+                        ip_str = stripped_line.split("=")[1].strip().split("/")[0]
                         used_ips.add(ipaddress.IPv4Address(ip_str))
                     except (ValueError, IndexError):
                         continue
@@ -203,7 +199,7 @@ class KeyGenerator:
             return False
 
     @staticmethod
-    def generate_keypair() -> Tuple[str, str]:
+    def generate_keypair() -> tuple[str, str]:
         """Generate WireGuard key pair (private, public)"""
 
         # Try local wg command first
@@ -220,7 +216,7 @@ class KeyGenerator:
             raise RuntimeError("Neither WireGuard tools nor Docker are available")
 
     @staticmethod
-    def _generate_with_wg() -> Tuple[str, str]:
+    def _generate_with_wg() -> tuple[str, str]:
         """Generate keys using local wg command"""
         # Generate private key
         result = subprocess.run(
@@ -241,7 +237,7 @@ class KeyGenerator:
         return private_key, public_key
 
     @staticmethod
-    def _generate_with_docker() -> Tuple[str, str]:
+    def _generate_with_docker() -> tuple[str, str]:
         """Generate keys using Docker container"""
         # Generate private key
         result = subprocess.run(
@@ -344,7 +340,7 @@ class QRCodeGenerator:
     """QR code generation utility"""
 
     @staticmethod
-    def generate_qr(content: str, output_file: Optional[str] = None) -> bool:
+    def generate_qr(content: str, output_file: str | None = None) -> bool:
         """Generate QR code for given content"""
         if not QRCodeGenerator._command_exists("qrencode"):
             Logger.warning("qrencode not installed - QR code will not be generated")

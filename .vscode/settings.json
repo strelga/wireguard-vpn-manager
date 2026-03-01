@@ -1,0 +1,42 @@
+{
+    "cSpell.words": [
+        "ALLOWEDIPS",
+        "ansiutf",
+        "confs",
+        "direnv",
+        "ensurepath",
+        "genkey",
+        "htmlcov",
+        "isort",
+        "Keepalive",
+        "keypair",
+        "mypy",
+        "PEERDNS",
+        "PGID",
+        "pipx",
+        "POSTROUTING",
+        "pprint",
+        "prefixlen",
+        "PUID",
+        "pycache",
+        "pycodestyle",
+        "Pyflakes",
+        "Pylint",
+        "pypackages",
+        "pyproject",
+        "pytest",
+        "pytype",
+        "pyupgrade",
+        "qrencode",
+        "SERVERPORT",
+        "SERVERURL",
+        "setuptools",
+        "sysctls",
+        "usermod",
+        "venv"
+    ],
+    "python.defaultInterpreterPath": "~/.local/pipx/venvs/wireguard-vpn-manager/bin/python",
+    "python.analysis.extraPaths": [
+        "~/.local/pipx/venvs/wireguard-vpn-manager/lib/python3.14/site-packages"
+    ]
+}

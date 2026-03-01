@@ -4,10 +4,8 @@ WireGuard Client Management Module
 """
 
 import subprocess
-import sys
-from pathlib import Path
-from typing import List
 
+from services import ServiceManager
 from utils import (
     Color,
     DockerManager,
@@ -38,13 +36,13 @@ class ClientManager:
         in_interface = False
 
         for line in lines:
-            line = line.strip()
-            if line == "[Interface]":
+            stripped_line = line.strip()
+            if stripped_line == "[Interface]":
                 in_interface = True
-            elif line.startswith("[") and line != "[Interface]":
+            elif stripped_line.startswith("[") and stripped_line != "[Interface]":
                 in_interface = False
-            elif in_interface and line.startswith("PrivateKey"):
-                private_key = line.split("=")[1].strip()
+            elif in_interface and stripped_line.startswith("PrivateKey"):
+                private_key = stripped_line.split("=")[1].strip()
                 # Generate public key from private key
                 try:
                     if KeyGenerator.command_exists("wg"):
@@ -306,14 +304,66 @@ PersistentKeepalive = 25
             Logger.warning(f"Client configuration file not found: {client_config_file}")
             return False
 
+    def _validate_remove_inputs(self, server_name: str, client_name: str) -> bool:
+        """Validate inputs for remove operation"""
+        if not validate_server_name(server_name):
+            return False
+
+        return validate_client_name(client_name)
+
+    def _show_available_clients(self, server_name: str) -> None:
+        """Show available clients when client not found"""
+        existing_clients = self.list_clients(server_name, show_output=False)
+        if existing_clients:
+            Logger.info("Available clients:")
+            for client in existing_clients:
+                Logger.info(f"  - {client}")
+        else:
+            Logger.info("No clients found")
+
+    def _perform_removal(self, wg_config: WireGuardConfig, client_name: str) -> bool:
+        """Perform the actual removal of client data"""
+        # Remove peer from server config
+        Logger.info("Removing peer from server configuration...")
+        server_config_removed = self._remove_peer_from_server_config(wg_config, client_name)
+
+        # Remove client files
+        Logger.info("Removing client configuration files...")
+        client_files_removed = self._remove_client_files(wg_config, client_name)
+
+        if not server_config_removed and not client_files_removed:
+            Logger.error("No client data was found to remove")
+            return False
+
+        return True
+
+    def _restart_after_removal(self, container_name: str) -> None:
+        """Restart container after client removal"""
+        Logger.info("Restarting container...")
+        if DockerManager.restart_container(container_name):
+            Logger.success(f"Container '{container_name}' restarted successfully")
+        else:
+            Logger.warning(
+                "Failed to restart container - you may need to restart manually"
+            )
+
+    def _show_remaining_clients(self, server_name: str) -> None:
+        """Show remaining clients after removal"""
+        remaining_clients = self.list_clients(server_name, show_output=False)
+        if remaining_clients:
+            print(f"\n{Color.BLUE}Remaining clients:{Color.NC}")
+            for client in remaining_clients:
+                print(f"  - {client}")
+        else:
+            print(
+                f"\n{Color.BLUE}No clients remaining on server '{server_name}'{Color.NC}"
+            )
+
     def remove(self, server_name: str, client_name: str) -> bool:
         """Remove a client from WireGuard server"""
         try:
             # Validate inputs
-            if not validate_server_name(server_name):
-                return False
-
-            if not validate_client_name(client_name):
+            if not self._validate_remove_inputs(server_name, client_name):
                 return False
 
             # Initialize configuration
@@ -322,58 +372,22 @@ PersistentKeepalive = 25
             # Check if client exists
             if not self._check_client_exists(wg_config, client_name):
                 Logger.error(f"Client '{client_name}' not found")
-
-                # Show available clients
-                existing_clients = self.list_clients(server_name, show_output=False)
-                if existing_clients:
-                    Logger.info("Available clients:")
-                    for client in existing_clients:
-                        Logger.info(f"  - {client}")
-                else:
-                    Logger.info("No clients found")
-
+                self._show_available_clients(server_name)
                 return False
 
             # Get server info
             server_info = wg_config.get_server_info()
 
-            # Remove peer from server config
-            Logger.info("Removing peer from server configuration...")
-            server_config_removed = self._remove_peer_from_server_config(
-                wg_config, client_name
-            )
-
-            # Remove client files
-            Logger.info("Removing client configuration files...")
-            client_files_removed = self._remove_client_files(wg_config, client_name)
-
-            if not server_config_removed and not client_files_removed:
-                Logger.error("No client data was found to remove")
+            # Perform removal
+            if not self._perform_removal(wg_config, client_name):
                 return False
 
             # Restart container
-            Logger.info("Restarting container...")
-            container_name = server_info["container_name"]
-            if DockerManager.restart_container(container_name):
-                Logger.success(f"Container '{container_name}' restarted successfully")
-            else:
-                Logger.warning(
-                    "Failed to restart container - you may need to restart manually"
-                )
+            self._restart_after_removal(server_info["container_name"])
 
             # Display results
             Logger.success(f"Client '{client_name}' removed successfully!")
-
-            # Show remaining clients
-            remaining_clients = self.list_clients(server_name, show_output=False)
-            if remaining_clients:
-                print(f"\n{Color.BLUE}Remaining clients:{Color.NC}")
-                for client in remaining_clients:
-                    print(f"  - {client}")
-            else:
-                print(
-                    f"\n{Color.BLUE}No clients remaining on server '{server_name}'{Color.NC}"
-                )
+            self._show_remaining_clients(server_name)
 
             return True
 
@@ -381,7 +395,7 @@ PersistentKeepalive = 25
             Logger.error(f"Failed to remove client: {e}")
             return False
 
-    def list_clients(self, server_name: str, show_output: bool = True) -> List[str]:
+    def list_clients(self, server_name: str, show_output: bool = True) -> list[str]:
         """List clients for a specific server"""
         if not validate_server_name(server_name):
             return []
@@ -401,9 +415,9 @@ PersistentKeepalive = 25
 
             # Find all client comments
             for line in content.split("\n"):
-                line = line.strip()
-                if line.startswith("# Client: "):
-                    client_name = line.replace("# Client: ", "")
+                stripped_line = line.strip()
+                if stripped_line.startswith("# Client: "):
+                    client_name = stripped_line.replace("# Client: ", "")
                     if client_name not in clients:
                         clients.append(client_name)
 
@@ -421,8 +435,6 @@ PersistentKeepalive = 25
 
     def list_all_clients(self) -> None:
         """List clients for all servers"""
-        from services import ServiceManager
-
         service_manager = ServiceManager()
         servers = service_manager.get_available_servers()
 

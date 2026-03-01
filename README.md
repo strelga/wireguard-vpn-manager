@@ -13,29 +13,23 @@ A comprehensive WireGuard VPN management system with Docker Compose support for 
 
 ## Project Structure
 
-```
+```txt
 vpn/
 ├── docker-compose.yml          # Main compose file with includes
 ├── .env                        # Environment configuration
 ├── servers/
 │   ├── server-1/
-│   │   ├── docker-compose.yml
-│   │   ├── config/            # Server configuration files
+│   │   ├── config.yml         # Server configuration file
 │   │   └── clients/           # Client configuration files
-│   └── server-2/
-│       ├── docker-compose.yml
-│       ├── config/            # Server configuration files
-│       └── clients/           # Client configuration files
+│   └── ...
 └── vpn-manager/               # Unified management tool
-    ├── __main__.py            # Main CLI interface
+    ├── manager.py            # Main CLI interface
     ├── utils.py               # Common utilities library
     ├── services.py            # Service management
     ├── clients.py             # Client management
     ├── servers.py             # Server management
     ├── keys.py                # Key generation
-    ├── pyproject.toml         # Project configuration
-    ├── setup.sh               # Development setup script
-    └── venv/                  # Virtual environment
+    └── pyproject.toml         # Project configuration
 ```
 
 ## Prerequisites
@@ -87,21 +81,14 @@ brew install qrencode wireguard-tools
 
 ## Configuration
 
-1. **Edit `.env` file** with your server details:
+1. **Server configurations** are stored in `servers/<server_name>/config.yml`:
+   - Each server has its own YAML configuration file
+   - Contains server URL, port, subnet, DNS, allowed IPs, and peers count
+   - Automatically generated when creating a new server
 
-```bash
-# Internet gateway configuration
-INTERNET_SERVER_URL=your-server-ip-or-domain.com
-INTERNET_PEERS=5
-
-# Tunnel server configuration  
-TUNNEL_SERVER_URL=your-tunnel-server-ip.com
-TUNNEL_PEERS=3
-```
-
-1. **Server configurations** are automatically loaded from:
-   - `servers/internet/docker-compose.yml` - Internet gateway (10.13.13.0/24, port 51820)
-   - `servers/tunnel/docker-compose.yml` - Tunnel server (10.14.14.0/24, port 51821)
+1. **Docker Compose** is generated from server configs:
+   - Run `vpn-manager service generate` to create `servers/docker-compose.generated.yml`
+   - Main `docker-compose.yml` includes the generated file
 
 ## Usage
 
@@ -114,70 +101,73 @@ vpn-manager --help
 ### Service Management
 
 ```bash
-# Start all services
-vpn-manager start
-
-# Start specific server
-vpn-manager start internet
+# Start services
+vpn-manager service start [server_name]
 
 # Stop services
-vpn-manager stop [server_name]
+vpn-manager service stop [server_name]
 
 # Restart services
-vpn-manager restart [server_name]
+vpn-manager service restart [server_name]
 
 # Check status
-vpn-manager status [server_name]
+vpn-manager service status [server_name]
+
+# Generate docker-compose configuration
+vpn-manager service generate
 ```
 
 ### Server Management
 
 ```bash
 # List all servers
-vpn-manager list-servers
+vpn-manager server list
 
 # Create a new server
-vpn-manager create-server myserver example.com 51822 10.15.15.0/24
+vpn-manager server create -n myserver -u example.com -p 51822 -s 10.15.15.0/24
 
 # Create server with custom DNS and allowed IPs
-vpn-manager create-server myserver example.com 51822 10.15.15.0/24 "1.1.1.1,8.8.8.8" "0.0.0.0/0"
+vpn-manager server create -n myserver -u example.com -p 51822 -s 10.15.15.0/24 -d "1.1.1.1,8.8.8.8" -a "0.0.0.0/0"
+
+# Create server with custom peers count
+vpn-manager server create -n myserver -u example.com -p 51822 -s 10.15.15.0/24 -P 10
 
 # Remove server (with confirmation)
-vpn-manager remove-server myserver
+vpn-manager server remove myserver
 
 # Force remove server (no confirmation)
-vpn-manager remove-server myserver --force
+vpn-manager server remove myserver --force
 ```
 
 ### Client Management
 
 ```bash
 # Add a new client
-vpn-manager add-client <server_name> <client_name>
+vpn-manager client add <server_name> <client_name>
 
 # Examples
-vpn-manager add-client internet phone
-vpn-manager add-client tunnel laptop
+vpn-manager client add internet phone
+vpn-manager client add tunnel laptop
 
 # Remove a client
-vpn-manager remove-client <server_name> <client_name>
+vpn-manager client remove <server_name> <client_name>
 
 # Examples
-vpn-manager remove-client internet phone
-vpn-manager remove-client tunnel laptop
+vpn-manager client remove internet phone
+vpn-manager client remove tunnel laptop
 
 # List clients
-vpn-manager list-clients [server_name]
+vpn-manager client list [server_name]
 ```
 
 ### Key Generation
 
 ```bash
 # Generate key pair (print to stdout)
-vpn-manager generate-keys
+vpn-manager key generate
 
 # Save to directory
-vpn-manager generate-keys /path/to/save/keys
+vpn-manager key generate /path/to/save/keys
 ```
 
 ### Help
@@ -185,6 +175,12 @@ vpn-manager generate-keys /path/to/save/keys
 ```bash
 # Show all available commands
 vpn-manager --help
+
+# Show help for a specific group
+vpn-manager service --help
+vpn-manager client --help
+vpn-manager server --help
+vpn-manager key --help
 ```
 
 ## Client Configuration
@@ -246,7 +242,7 @@ To completely reset a server configuration:
 
 ```bash
 # Stop services
-vpn-manager stop
+vpn-manager service stop
 
 # Remove server config and clients
 rm -rf servers/internet/config/*
@@ -255,45 +251,8 @@ rm -rf servers/tunnel/config/*
 rm -rf servers/tunnel/clients/*
 
 # Restart services (will regenerate server configs)
-vpn-manager start
+vpn-manager service start
 ```
-
-## Development
-
-The project includes modern Python development tools for code quality and maintainability.
-
-### Code Quality Tools
-
-```bash
-# Development tools are available globally after setup
-cd manager
-
-# Run linter
-ruff check .
-
-# Format code
-ruff format .
-
-# Type checking
-mypy .
-
-# Run all checks
-ruff check . && mypy .
-```
-
-### Project Configuration
-
-- **pyproject.toml**: Modern Python project configuration with dependencies and tool settings
-- **ruff**: Fast Python linter and formatter (installed globally via pipx)
-- **mypy**: Static type checker (installed globally via pipx)
-- **pipx**: Package manager for isolated Python applications
-
-### Adding New Features
-
-1. Make changes to the code
-2. Run code quality checks: `ruff check . && mypy .`
-3. Test the functionality
-4. Update documentation if needed
 
 ## Security Notes
 
@@ -309,8 +268,8 @@ ruff check . && mypy .
 To add a new server type:
 
 1. Create directory structure: `servers/<new_server>/`
-2. Add `docker-compose.yml` with WireGuard service configuration
-3. Update main `docker-compose.yml` to include the new server
+2. Create `config.yml` with server configuration
+3. Run `vpn-manager service generate` to update docker-compose
 4. The management scripts will automatically detect the new server
 
 ### Batch Operations
@@ -319,7 +278,7 @@ Add multiple clients:
 
 ```bash
 for client in phone laptop tablet; do
-    vpn-manager add-client internet $client
+    vpn-manager client add <server_name> $client
 done
 ```
 
@@ -343,7 +302,7 @@ For issues and questions:
 
 1. Check the troubleshooting section above
 2. Review container logs for error messages
-3. Verify your `.env` configuration
+3. Verify your server configurations in `servers/*/config.yml`
 4. Ensure all prerequisites are installed correctly
 
 ## License

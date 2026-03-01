@@ -3,9 +3,7 @@
 WireGuard Key Generation Module
 """
 
-import sys
 from pathlib import Path
-from typing import Optional
 
 from utils import KeyGenerator, Logger
 
@@ -13,7 +11,7 @@ from utils import KeyGenerator, Logger
 class KeyManager:
     """WireGuard key generation utility"""
 
-    def generate(self, output_directory: Optional[str] = None) -> bool:
+    def generate(self, output_directory: str | None = None) -> bool:
         """Generate WireGuard key pair"""
         try:
             Logger.info("Generating WireGuard key pair...")
