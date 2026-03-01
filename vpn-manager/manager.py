@@ -32,10 +32,10 @@ Command Groups:
 
 Examples:
   vpn-manager service start                    - Start all services
-  vpn-manager service start internet           - Start internet gateway
+  vpn-manager service start myserver           - Start specific server
   vpn-manager service generate                 - Generate docker-compose configuration
-  vpn-manager client add internet phone        - Add phone client
-  vpn-manager client remove tunnel laptop      - Remove laptop client
+  vpn-manager client add myserver phone        - Add phone client
+  vpn-manager client remove myserver laptop    - Remove laptop client
   vpn-manager client list                      - List all clients
   vpn-manager key generate /tmp/keys           - Generate keys to directory
   vpn-manager server create -n myserver -u example.com -p 51820 -s 10.13.13.0/24

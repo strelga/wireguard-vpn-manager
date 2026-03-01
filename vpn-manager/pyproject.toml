@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "wireguard-vpn-manager"
 version = "1.0.0"
 description = "WireGuard VPN Orchestration Tool"
-authors = [{name = "VPN Manager", email = "admin@example.com"}]
+authors = [{name = "Grigory Streltsov", email = "strelga@gmail.com"}]
 license = "MIT"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -28,9 +28,9 @@ dev = [
 vpn-manager = "manager:main"
 
 [project.urls]
-Homepage = "https://github.com/example/wireguard-vpn-manager"
-Repository = "https://github.com/example/wireguard-vpn-manager.git"
-Issues = "https://github.com/example/wireguard-vpn-manager/issues"
+Homepage = "https://github.com/strelga/wireguard-vpn-manager"
+Repository = "https://github.com/strelga/wireguard-vpn-manager.git"
+Issues = "https://github.com/strelga/wireguard-vpn-manager/issues"
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.

@@ -4,7 +4,7 @@ A comprehensive WireGuard VPN management system with Docker Compose support for 
 
 ## Features
 
-- **Multi-server support**: Internet gateway and tunnel server configurations
+- **Multi-server support**: Manage multiple local WireGuard VPN servers with different configurations
 - **Client management**: Easy addition and removal of VPN clients
 - **Service management**: Start, stop, restart, and monitor services
 - **QR code generation**: Mobile-friendly client configuration
@@ -146,15 +146,15 @@ vpn-manager server remove myserver --force
 vpn-manager client add <server_name> <client_name>
 
 # Examples
-vpn-manager client add internet phone
-vpn-manager client add tunnel laptop
+vpn-manager client add myserver phone
+vpn-manager client add myserver laptop
 
 # Remove a client
 vpn-manager client remove <server_name> <client_name>
 
 # Examples
-vpn-manager client remove internet phone
-vpn-manager client remove tunnel laptop
+vpn-manager client remove myserver phone
+vpn-manager client remove myserver laptop
 
 # List clients
 vpn-manager client list [server_name]
@@ -217,16 +217,14 @@ docker-compose logs -f [container_name]
 ### Check WireGuard status inside container
 
 ```bash
-docker-compose exec wireguard-internet wg show
-docker-compose exec wireguard-tunnel wg show
+docker-compose exec wireguard-myserver wg show
 ```
 
 ### Verify network connectivity
 
 ```bash
 # Test from client
-ping 10.13.13.1  # Internet gateway
-ping 10.14.14.1  # Tunnel server
+ping 10.13.13.1  # Server IP
 ```
 
 ### Common Issues
@@ -245,10 +243,8 @@ To completely reset a server configuration:
 vpn-manager service stop
 
 # Remove server config and clients
-rm -rf servers/internet/config/*
-rm -rf servers/internet/clients/*
-rm -rf servers/tunnel/config/*
-rm -rf servers/tunnel/clients/*
+rm -rf servers/myserver/config/*
+rm -rf servers/myserver/clients/*
 
 # Restart services (will regenerate server configs)
 vpn-manager service start
@@ -293,7 +289,7 @@ docker-compose logs -f
 Monitor specific container:
 
 ```bash
-docker-compose logs -f wireguard-internet
+docker-compose logs -f wireguard-myserver
 ```
 
 ## Support
@@ -304,7 +300,12 @@ For issues and questions:
 2. Review container logs for error messages
 3. Verify your server configurations in `servers/*/config.yml`
 4. Ensure all prerequisites are installed correctly
+5. Open an issue on [GitHub](https://github.com/strelga/wireguard-vpn-manager/issues)
+
+## Author
+
+Grigory Streltsov - [strelga@gmail.com](mailto:strelga@gmail.com)
 
 ## License
 
-This project is provided as-is for educational and personal use.
+MIT
