@@ -158,6 +158,36 @@ class ServiceManager:
             Logger.error(f"Failed to get status: {e}")
             return False
 
+    def logs(self, server_name: str | None = None, follow: bool = False, tail: int = 100) -> bool:
+        """Show service logs"""
+        try:
+            if server_name:
+                Logger.info(f"Logs for {server_name} server:")
+                container_name = self.server_containers.get(server_name)
+                if not container_name:
+                    Logger.error(f"Unknown server: {server_name}")
+                    return False
+
+                cmd = ["logs"]
+                if follow:
+                    cmd.append("-f")
+                cmd.append(f"--tail={tail}")
+                cmd.append(container_name)
+                subprocess.run(self.compose_cmd + cmd, check=True)
+            else:
+                Logger.info("Logs for all services:")
+                cmd = ["logs"]
+                if follow:
+                    cmd.append("-f")
+                cmd.append(f"--tail={tail}")
+                subprocess.run(self.compose_cmd + cmd, check=True)
+
+            return True
+
+        except subprocess.CalledProcessError as e:
+            Logger.error(f"Failed to get logs: {e}")
+            return False
+
     def show_info(self) -> None:
         """Show general information about services"""
         print(f"\n{Color.BLUE}Available servers:{Color.NC}")

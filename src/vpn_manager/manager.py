@@ -25,7 +25,7 @@ def _create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Command Groups:
-  service    - Service management (start, stop, restart, status, generate)
+  service    - Service management (start, stop, restart, status, logs, generate)
   client     - Client management (add, remove, list)
   key        - Key management (generate)
   server     - Server management (create, list, remove)
@@ -33,6 +33,9 @@ Command Groups:
 Examples:
   vpn-manager service start                    - Start all services
   vpn-manager service start myserver           - Start specific server
+  vpn-manager service logs myserver            - Show logs for specific server
+  vpn-manager service logs -f                  - Follow logs for all services
+  vpn-manager service logs myserver -t 50      - Show last 50 lines for server
   vpn-manager service generate                 - Generate docker-compose configuration
   vpn-manager client add myserver phone        - Add phone client
   vpn-manager client remove myserver laptop    - Remove laptop client
@@ -60,6 +63,11 @@ Examples:
 
     status_parser = service_subparsers.add_parser("status", help="Show status")
     status_parser.add_argument("server_name", nargs="?", help="Server name (optional)")
+
+    logs_parser = service_subparsers.add_parser("logs", help="Show logs")
+    logs_parser.add_argument("server_name", nargs="?", help="Server name (optional)")
+    logs_parser.add_argument("-f", "--follow", action="store_true", help="Follow log output")
+    logs_parser.add_argument("-t", "--tail", type=int, default=100, help="Number of lines to show (default: 100)")
 
     service_subparsers.add_parser("generate", help="Generate docker-compose configuration")
 
@@ -106,11 +114,11 @@ Examples:
 
     return parser
 
-def _parse_argument(args: argparse.Namespace, arg_name: str) -> str | None:
-    return getattr(args, arg_name, None)
+def _parse_argument_str(args: argparse.Namespace, arg_name: str, default: str | None = None) -> str | None:
+    return getattr(args, arg_name, default)
 
 
-def _handle_service_command(command: str, server_name: str | None) -> None:
+def _handle_service_command(command: str, args: argparse.Namespace, server_name: str | None) -> None:  # noqa: PLR0912
     """Handle service management commands"""
     service_manager = ServiceManager()
 
@@ -144,6 +152,11 @@ def _handle_service_command(command: str, server_name: str | None) -> None:
             raise RuntimeError("Failed to get status")
         if not server_name:
             service_manager.show_info()
+    elif command == "logs":
+        follow = getattr(args, 'follow', False)
+        tail = getattr(args, 'tail', 100)
+        if not service_manager.logs(server_name, follow=follow, tail=tail):
+            raise RuntimeError("Failed to get logs")
     elif command == "generate":
         Logger.header("GENERATING DOCKER-COMPOSE CONFIGURATION")
         server_manager = ServerManager()
@@ -226,18 +239,18 @@ def main():
     try:
         # Service management commands
         if args.group == "service":
-            server_name = _parse_argument(args, 'server_name')
-            _handle_service_command(args.command, server_name)
+            server_name = _parse_argument_str(args, 'server_name')
+            _handle_service_command(args.command, args, server_name)
 
         # Client management commands
         elif args.group == "client":
-            server = _parse_argument(args, 'server')
-            client = _parse_argument(args, 'client')
+            server = _parse_argument_str(args, 'server')
+            client = _parse_argument_str(args, 'client')
             _handle_client_command(args.command, server, client)
 
         # Key management commands
         elif args.group == "key":
-            output_dir = _parse_argument(args, 'output_dir')
+            output_dir = _parse_argument_str(args, 'output_dir')
             _handle_key_command(output_dir)
 
         # Server management commands

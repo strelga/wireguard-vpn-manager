@@ -82,6 +82,76 @@ class TestMainExternalAPI:
 
         mock_instance.status.assert_called_once_with(None)
 
+    @patch("vpn_manager.manager.ServiceManager")
+    @patch("sys.argv", ["manager.py", "service", "logs"])
+    def test_service_logs_calls_service_manager(self, mock_service_manager) -> None:
+        """Test service logs command calls ServiceManager.logs"""
+        mock_instance = MagicMock()
+        mock_instance.get_available_servers.return_value = []
+        mock_instance.logs.return_value = True
+        mock_service_manager.return_value = mock_instance
+
+        with patch("os.chdir"):
+            main()
+
+        mock_instance.logs.assert_called_once_with(None, follow=False, tail=100)
+
+    @patch("vpn_manager.manager.ServiceManager")
+    @patch("sys.argv", ["manager.py", "service", "logs", "test-server"])
+    def test_service_logs_with_server_calls_service_manager(self, mock_service_manager) -> None:
+        """Test service logs with server name calls ServiceManager.logs"""
+        mock_instance = MagicMock()
+        mock_instance.get_available_servers.return_value = ["test-server"]
+        mock_instance.logs.return_value = True
+        mock_service_manager.return_value = mock_instance
+
+        with patch("os.chdir"):
+            main()
+
+        mock_instance.logs.assert_called_once_with("test-server", follow=False, tail=100)
+
+    @patch("vpn_manager.manager.ServiceManager")
+    @patch("sys.argv", ["manager.py", "service", "logs", "-f"])
+    def test_service_logs_with_follow_calls_service_manager(self, mock_service_manager) -> None:
+        """Test service logs with follow flag calls ServiceManager.logs"""
+        mock_instance = MagicMock()
+        mock_instance.get_available_servers.return_value = []
+        mock_instance.logs.return_value = True
+        mock_service_manager.return_value = mock_instance
+
+        with patch("os.chdir"):
+            main()
+
+        mock_instance.logs.assert_called_once_with(None, follow=True, tail=100)
+
+    @patch("vpn_manager.manager.ServiceManager")
+    @patch("sys.argv", ["manager.py", "service", "logs", "-t", "50"])
+    def test_service_logs_with_tail_calls_service_manager(self, mock_service_manager) -> None:
+        """Test service logs with tail option calls ServiceManager.logs"""
+        mock_instance = MagicMock()
+        mock_instance.get_available_servers.return_value = []
+        mock_instance.logs.return_value = True
+        mock_service_manager.return_value = mock_instance
+
+        with patch("os.chdir"):
+            main()
+
+        mock_instance.logs.assert_called_once_with(None, follow=False, tail=50)
+
+    @patch("vpn_manager.manager.ServiceManager")
+    @patch("sys.argv", ["manager.py", "service", "logs", "test-server", "-f", "-t", "25"])
+    def test_service_logs_with_all_options_calls_service_manager(self, mock_service_manager) -> None:
+        """Test service logs with all options calls ServiceManager.logs"""
+        mock_instance = MagicMock()
+        mock_instance.get_available_servers.return_value = ["test-server"]
+        mock_instance.logs.return_value = True
+        mock_service_manager.return_value = mock_instance
+
+        with patch("os.chdir"):
+            main()
+
+        mock_instance.logs.assert_called_once_with("test-server", follow=True, tail=25)
+
     @patch("vpn_manager.manager.ServerManager")
     @patch("sys.argv", ["manager.py", "service", "generate"])
     def test_service_generate_calls_server_manager(self, mock_server_manager):

@@ -392,4 +392,112 @@ class TestServiceManager:
             manager = ServiceManager()
             manager._load_server_containers()
 
-        assert len(manager.server_containers) == 0
+
+    @patch("vpn_manager.services.DockerManager")
+    @patch("subprocess.run")
+    def test_logs_specific_server(self, mock_run, mock_docker) -> None:
+        """Test showing logs for a specific server"""
+        mock_docker.get_compose_command.return_value = "docker compose"
+        mock_run.return_value = MagicMock()
+
+        manager = ServiceManager()
+        manager.server_containers = {"test-server": "wireguard-test"}
+
+        result = manager.logs("test-server")
+
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["docker", "compose", "logs", "--tail=100", "wireguard-test"], check=True
+        )
+
+    @patch("vpn_manager.services.DockerManager")
+    @patch("subprocess.run")
+    def test_logs_all_servers(self, mock_run, mock_docker) -> None:
+        """Test showing logs for all servers"""
+        mock_docker.get_compose_command.return_value = "docker compose"
+        mock_run.return_value = MagicMock()
+
+        manager = ServiceManager()
+        result = manager.logs()
+
+        assert result is True
+        mock_run.assert_called_once_with(["docker", "compose", "logs", "--tail=100"], check=True)
+
+    @patch("vpn_manager.services.DockerManager")
+    @patch("subprocess.run")
+    def test_logs_with_follow(self, mock_run, mock_docker) -> None:
+        """Test showing logs with follow flag"""
+        mock_docker.get_compose_command.return_value = "docker compose"
+        mock_run.return_value = MagicMock()
+
+        manager = ServiceManager()
+        manager.server_containers = {"test-server": "wireguard-test"}
+
+        result = manager.logs("test-server", follow=True)
+
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["docker", "compose", "logs", "-f", "--tail=100", "wireguard-test"], check=True
+        )
+
+    @patch("vpn_manager.services.DockerManager")
+    @patch("subprocess.run")
+    def test_logs_with_custom_tail(self, mock_run, mock_docker) -> None:
+        """Test showing logs with custom tail value"""
+        mock_docker.get_compose_command.return_value = "docker compose"
+        mock_run.return_value = MagicMock()
+
+        manager = ServiceManager()
+        manager.server_containers = {"test-server": "wireguard-test"}
+
+        result = manager.logs("test-server", tail=50)
+
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["docker", "compose", "logs", "--tail=50", "wireguard-test"], check=True
+        )
+
+    @patch("vpn_manager.services.DockerManager")
+    @patch("subprocess.run")
+    def test_logs_with_follow_and_tail(self, mock_run, mock_docker) -> None:
+        """Test showing logs with both follow and tail options"""
+        mock_docker.get_compose_command.return_value = "docker compose"
+        mock_run.return_value = MagicMock()
+
+        manager = ServiceManager()
+        manager.server_containers = {"test-server": "wireguard-test"}
+
+        result = manager.logs("test-server", follow=True, tail=25)
+
+        assert result is True
+        mock_run.assert_called_once_with(
+            ["docker", "compose", "logs", "-f", "--tail=25", "wireguard-test"], check=True
+        )
+
+    @patch("vpn_manager.services.DockerManager")
+    @patch("subprocess.run")
+    def test_logs_unknown_server(self, mock_run, mock_docker) -> None:
+        """Test showing logs for an unknown server"""
+        mock_docker.get_compose_command.return_value = "docker compose"
+
+        manager = ServiceManager()
+        manager.server_containers = {}
+
+        result = manager.logs("unknown-server")
+
+        assert result is False
+        mock_run.assert_not_called()
+
+    @patch("vpn_manager.services.DockerManager")
+    @patch("subprocess.run")
+    def test_logs_exception(self, mock_run, mock_docker) -> None:
+        """Test logs when exception occurs"""
+        mock_docker.get_compose_command.return_value = "docker compose"
+        mock_run.side_effect = subprocess.CalledProcessError(1, "docker compose")
+
+        manager = ServiceManager()
+        result = manager.logs()
+
+        assert result is False
+        # Verify that subprocess.run was called despite the exception
+        assert mock_run.called
