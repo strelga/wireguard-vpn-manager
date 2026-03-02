@@ -1,6 +1,26 @@
 #!/bin/bash
 set -e
 
+# Parse arguments
+DEV_MODE=true
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --no-dev)
+            DEV_MODE=false
+            shift
+            ;;
+        --dev)
+            DEV_MODE=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--dev|--no-dev]"
+            exit 1
+            ;;
+    esac
+done
+
 echo "🚀 Setting up WireGuard VPN Manager with pipx..."
 
 # Check if we're in the right directory (should have pyproject.toml and src/vpn_manager)
@@ -78,9 +98,14 @@ if pipx list | grep -q "wireguard-vpn-manager"; then
     pipx uninstall wireguard-vpn-manager
 fi
 
-# Install in editable mode with development dependencies
-echo "📦 Installing in development mode..."
-pipx install --editable ".[dev]"
+# Install in editable mode
+if [ "$DEV_MODE" = true ]; then
+    echo "📦 Installing in development mode..."
+    pipx install --editable ".[dev]"
+else
+    echo "📦 Installing in production mode..."
+    pipx install --editable .
+fi
 
 echo ""
 echo "✅ Setup complete!"

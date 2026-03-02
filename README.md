@@ -79,6 +79,58 @@ All management is done through the unified CLI tool. After running the setup scr
 vpn-manager --help
 ```
 
+### Shell Autocompletion
+
+The CLI supports shell autocompletion for commands, options, and arguments. Enable it for your shell:
+
+#### Bash
+
+```bash
+# Install completion for current session
+vpn-manager --install-completion bash
+
+# Install permanently (add to ~/.bashrc)
+echo 'eval "$(vpn-manager --show-completion bash)"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+#### Zsh
+
+```bash
+# Install completion for current session
+vpn-manager --install-completion zsh
+
+# Install permanently (add to ~/.zshrc)
+echo 'eval "$(vpn-manager --show-completion zsh)"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+#### Fish
+
+```bash
+# Install completion for current session
+vpn-manager --install-completion fish
+
+# Install permanently (add to ~/.config/fish/completions/vpn-manager.fish)
+vpn-manager --show-completion fish > ~/.config/fish/completions/vpn-manager.fish
+```
+
+#### PowerShell
+
+```powershell
+# Install completion for current session
+vpn-manager --install-completion powershell | Out-String | Invoke-Expression
+
+# Install permanently (add to PowerShell profile)
+vpn-manager --show-completion powershell >> $PROFILE
+```
+
+To uninstall completion:
+
+```bash
+vpn-manager --uninstall-completion bash  # or zsh, fish, powershell
+```
+
 ### Service Management
 
 ```bash
@@ -93,6 +145,15 @@ vpn-manager service restart [server_name]
 
 # Check status
 vpn-manager service status [server_name]
+
+# View logs
+vpn-manager service logs [server_name]
+
+# Follow logs in real-time
+vpn-manager service logs -f [server_name]
+
+# Show last N lines of logs
+vpn-manager service logs -t 50 [server_name]
 
 # Generate docker-compose configuration
 vpn-manager service generate
@@ -217,14 +278,12 @@ For issues and questions:
 
 ### Check container logs
 
-```bash
-docker-compose logs -f [container_name]
-```
+Use the `vpn-manager service logs` command to view logs. See [Service Management](#service-management) for detailed usage.
 
 ### Check WireGuard status inside container
 
 ```bash
-docker-compose exec wireguard-myserver wg show
+vpn-manager service status [server_name]
 ```
 
 ### Verify network connectivity
@@ -290,13 +349,21 @@ done
 View real-time logs:
 
 ```bash
-docker-compose logs -f
+# Follow logs for all servers
+vpn-manager service logs -f
+
+# Follow logs for specific server
+vpn-manager service logs -f myserver
 ```
 
-Monitor specific container:
+Monitor specific server:
 
 ```bash
-docker-compose logs -f wireguard-myserver
+# Show last 100 lines (default)
+vpn-manager service logs myserver
+
+# Show last 50 lines
+vpn-manager service logs myserver -t 50
 ```
 
 ## Development

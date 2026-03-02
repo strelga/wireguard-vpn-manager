@@ -3,13 +3,15 @@
 WireGuard VPN Orchestration Tool
 
 Unified command-line interface for WireGuard VPN management.
-Usage: python3 manager.py <group> <command> [options]
+Usage: vpn-manager <group> <command> [options]
 """
 
-import argparse
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
+
+import typer
 
 from .clients import ClientManager
 from .keys import KeyManager
@@ -17,109 +19,185 @@ from .servers.servers import ServerCreateConfigData, ServerManager
 from .services import ServiceManager
 from .utils import Logger
 
+# Constants for validation
+MIN_PORT = 1
+MAX_PORT = 65535
+CIDR_PARTS_COUNT = 2
+MIN_SUBNET_MASK = 0
+MAX_SUBNET_MASK = 32
 
-def _create_parser() -> argparse.ArgumentParser:
-    """Create and configure argument parser"""
-    parser = argparse.ArgumentParser(
-        description="Comprehensive WireGuard VPN management tool",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Command Groups:
-  service    - Service management (start, stop, restart, status, logs, generate)
-  client     - Client management (add, remove, list)
-  key        - Key management (generate)
-  server     - Server management (create, list, remove)
+# Create main Typer app
+app = typer.Typer(
+    name="vpn-manager",
+    help="Comprehensive WireGuard VPN management tool",
+    add_completion=True,
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
 
-Examples:
-  vpn-manager service start                    - Start all services
-  vpn-manager service start myserver           - Start specific server
-  vpn-manager service logs myserver            - Show logs for specific server
-  vpn-manager service logs -f                  - Follow logs for all services
-  vpn-manager service logs myserver -t 50      - Show last 50 lines for server
-  vpn-manager service generate                 - Generate docker-compose configuration
-  vpn-manager client add myserver phone        - Add phone client
-  vpn-manager client remove myserver laptop    - Remove laptop client
-  vpn-manager client list                      - List all clients
-  vpn-manager key generate /tmp/keys           - Generate keys to directory
-  vpn-manager server create -n myserver -u example.com -p 51820 -s 10.13.13.0/24
-  vpn-manager server list                      - List all servers
-        """,
+# Create sub-apps for command groups
+service_app = typer.Typer(help="Service management")
+client_app = typer.Typer(help="Client management")
+key_app = typer.Typer(help="Key management")
+server_app = typer.Typer(help="Server management")
+
+# Register sub-apps
+app.add_typer(service_app, name="service")
+app.add_typer(client_app, name="client")
+app.add_typer(key_app, name="key")
+app.add_typer(server_app, name="server")
+
+
+def _prompt_for_input(prompt: str, default: str | None = None, validator: Callable[[str], bool] | None = None) -> str:
+    """Prompt user for input with optional default and validation"""
+    prompt = f"{prompt} [{default}]: " if default else f"{prompt}: "
+
+    while True:
+        try:
+            value = input(prompt).strip()
+            if not value and default:
+                return default
+            if validator and not validator(value):
+                continue
+            return value
+        except (EOFError, KeyboardInterrupt):
+            Logger.error("\nOperation cancelled by user")
+            sys.exit(1)
+
+
+def _validate_server_name(name: str) -> bool:
+    """Validate server name"""
+    if not name:
+        Logger.error("Server name cannot be empty")
+        return False
+    if not name.replace("-", "").replace("_", "").isalnum():
+        Logger.error("Server name can only contain alphanumeric characters, hyphens, and underscores")
+        return False
+    return True
+
+
+def _validate_port(port: str) -> bool:
+    """Validate port number"""
+    try:
+        port_int = int(port)
+        if not (MIN_PORT <= port_int <= MAX_PORT):
+            Logger.error(f"Port must be between {MIN_PORT} and {MAX_PORT}")
+            return False
+        return True
+    except ValueError:
+        Logger.error("Port must be a valid number")
+        return False
+
+
+def _validate_subnet(subnet: str) -> bool:
+    """Validate subnet format"""
+    if "/" not in subnet:
+        Logger.error("Subnet must be in CIDR format (e.g., 10.13.13.0/24)")
+        return False
+    parts = subnet.split("/")
+    if len(parts) != CIDR_PARTS_COUNT:
+        Logger.error("Subnet must be in CIDR format (e.g., 10.13.13.0/24)")
+        return False
+    try:
+        mask = int(parts[1])
+        if not (MIN_SUBNET_MASK <= mask <= MAX_SUBNET_MASK):
+            Logger.error(f"Subnet mask must be between {MIN_SUBNET_MASK} and {MAX_SUBNET_MASK}")
+            return False
+    except ValueError:
+        Logger.error("Subnet mask must be a valid number")
+        return False
+    return True
+
+
+def _validate_peers(peers: str) -> bool:
+    """Validate number of peers"""
+    try:
+        peers_int = int(peers)
+        if peers_int < 1:
+            Logger.error("Number of peers must be at least 1")
+            return False
+        return True
+    except ValueError:
+        Logger.error("Number of peers must be a valid number")
+        return False
+
+
+def _interactive_server_create() -> ServerCreateConfigData:
+    """Interactively prompt user for server creation parameters"""
+    Logger.header("INTERACTIVE SERVER CREATION")
+    Logger.info("Please provide the following information:")
+
+    name = _prompt_for_input("Server name", validator=_validate_server_name)
+    url = _prompt_for_input("Server URL (e.g., vpn.example.com)")
+    port = _prompt_for_input("Server port", "51820", _validate_port)
+    subnet = _prompt_for_input("Server subnet (CIDR)", "10.13.13.0/24", _validate_subnet)
+    dns = _prompt_for_input("DNS servers", "1.1.1.1,8.8.8.8")
+    allowed_ips = _prompt_for_input("Allowed IPs", "0.0.0.0/0")
+    peers = _prompt_for_input("Number of peers", "1", _validate_peers)
+
+    return ServerCreateConfigData(
+        name=name,
+        url=url,
+        port=int(port),
+        subnet=subnet,
+        dns=dns,
+        allowed_ips=allowed_ips,
+        peers=int(peers),
     )
 
-    subparsers = parser.add_subparsers(dest="group", help="Command group")
 
-    # Service management group
-    service_parser = subparsers.add_parser("service", help="Service management")
-    service_subparsers = service_parser.add_subparsers(dest="command", help="Service command")
-
-    start_parser = service_subparsers.add_parser("start", help="Start services")
-    start_parser.add_argument("server_name", nargs="?", help="Server name (optional)")
-
-    stop_parser = service_subparsers.add_parser("stop", help="Stop services")
-    stop_parser.add_argument("server_name", nargs="?", help="Server name (optional)")
-
-    restart_parser = service_subparsers.add_parser("restart", help="Restart services")
-    restart_parser.add_argument("server_name", nargs="?", help="Server name (optional)")
-
-    status_parser = service_subparsers.add_parser("status", help="Show status")
-    status_parser.add_argument("server_name", nargs="?", help="Server name (optional)")
-
-    logs_parser = service_subparsers.add_parser("logs", help="Show logs")
-    logs_parser.add_argument("server_name", nargs="?", help="Server name (optional)")
-    logs_parser.add_argument("-f", "--follow", action="store_true", help="Follow log output")
-    logs_parser.add_argument("-t", "--tail", type=int, default=100, help="Number of lines to show (default: 100)")
-
-    service_subparsers.add_parser("generate", help="Generate docker-compose configuration")
-
-    # Client management group
-    client_parser = subparsers.add_parser("client", help="Client management")
-    client_subparsers = client_parser.add_subparsers(dest="command", help="Client command")
-
-    add_client_parser = client_subparsers.add_parser("add", help="Add new client")
-    add_client_parser.add_argument("server", help="Server name")
-    add_client_parser.add_argument("client", help="Client name")
-
-    remove_client_parser = client_subparsers.add_parser("remove", help="Remove client")
-    remove_client_parser.add_argument("server", help="Server name")
-    remove_client_parser.add_argument("client", help="Client name")
-
-    list_clients_parser = client_subparsers.add_parser("list", help="List clients")
-    list_clients_parser.add_argument("server", nargs="?", help="Server name (optional)")
-
-    # Key management group
-    key_parser = subparsers.add_parser("key", help="Key management")
-    key_subparsers = key_parser.add_subparsers(dest="command", help="Key command")
-
-    generate_keys_parser = key_subparsers.add_parser("generate", help="Generate key pair")
-    generate_keys_parser.add_argument("output_dir", nargs="?", help="Output directory (optional)")
-
-    # Server management group
-    server_parser = subparsers.add_parser("server", help="Server management")
-    server_subparsers = server_parser.add_subparsers(dest="command", help="Server command")
-
-    create_server_parser = server_subparsers.add_parser("create", help="Create new server")
-    create_server_parser.add_argument("-n", "--name", required=True, help="Server name")
-    create_server_parser.add_argument("-u", "--url", required=True, help="Server URL")
-    create_server_parser.add_argument("-p", "--port", type=int, required=True, help="Server port")
-    create_server_parser.add_argument("-s", "--subnet", required=True, help="Server subnet")
-    create_server_parser.add_argument("-d", "--dns", default="1.1.1.1,8.8.8.8", help="DNS servers")
-    create_server_parser.add_argument("-a", "--allowed-ips", default="0.0.0.0/0", help="Allowed IPs")
-    create_server_parser.add_argument("-P", "--peers", type=int, default=1, help="Number of peers")
-
-    server_subparsers.add_parser("list", help="List all servers")
-
-    remove_server_parser = server_subparsers.add_parser("remove", help="Remove server")
-    remove_server_parser.add_argument("name", help="Server name")
-    remove_server_parser.add_argument("--force", action="store_true", help="Force removal")
-
-    return parser
-
-def _parse_argument_str(args: argparse.Namespace, arg_name: str, default: str | None = None) -> str | None:
-    return getattr(args, arg_name, default)
+def _validate_server_name_option(value: str | None) -> str | None:
+    """Validate server name option"""
+    if value is None:
+        return None
+    if not _validate_server_name(value):
+        raise typer.BadParameter("Server name can only contain alphanumeric characters, hyphens, and underscores")
+    return value
 
 
-def _handle_service_command(command: str, args: argparse.Namespace, server_name: str | None) -> None:  # noqa: PLR0912
-    """Handle service management commands"""
+def _validate_client_name_option(value: str) -> str:
+    """Validate client name option"""
+    if not value:
+        raise typer.BadParameter("Client name cannot be empty")
+    if not value.replace("-", "").replace("_", "").isalnum():
+        raise typer.BadParameter("Client name can only contain alphanumeric characters, hyphens, and underscores")
+    return value
+
+
+def _validate_port_option(value: int | None) -> int | None:
+    """Validate port option"""
+    if value is None:
+        return None
+    if not (MIN_PORT <= value <= MAX_PORT):
+        raise typer.BadParameter(f"Port must be between {MIN_PORT} and {MAX_PORT}")
+    return value
+
+
+def _validate_subnet_option(value: str | None) -> str | None:
+    """Validate subnet option"""
+    if value is None:
+        return None
+    if not _validate_subnet(value):
+        raise typer.BadParameter("Subnet must be in CIDR format (e.g., 10.13.13.0/24)")
+    return value
+
+
+def _validate_peers_option(value: int) -> int:
+    """Validate peers option"""
+    if value < 1:
+        raise typer.BadParameter("Number of peers must be at least 1")
+    return value
+
+
+# ============================================================================
+# Service Management Commands
+# ============================================================================
+
+@service_app.command("start")
+def service_start(
+    server_name: str = typer.Argument(None, help="Server name (optional)"),
+) -> None:
+    """Start services"""
     service_manager = ServiceManager()
 
     # Validate server name if provided
@@ -130,136 +208,274 @@ def _handle_service_command(command: str, args: argparse.Namespace, server_name:
             Logger.info("Available servers:")
             for server in available_servers:
                 Logger.info(f"  - {server}")
-            raise ValueError(f"Unknown server: {server_name}")
+            raise typer.Exit(1)
 
-    Logger.header(
-        f"{command.upper()} SERVICES{' - ' + server_name.upper() if server_name else ''}"
-    )
+    Logger.header(f"START SERVICES{' - ' + server_name.upper() if server_name else ''}")
 
-    if command == "start":
-        if not service_manager.start(server_name):
-            raise RuntimeError("Failed to start services")
-        if not server_name:
-            service_manager.show_info()
-    elif command == "stop":
-        if not service_manager.stop(server_name):
-            raise RuntimeError("Failed to stop services")
-    elif command == "restart":
-        if not service_manager.restart(server_name):
-            raise RuntimeError("Failed to restart services")
-    elif command == "status":
-        if not service_manager.status(server_name):
-            raise RuntimeError("Failed to get status")
-        if not server_name:
-            service_manager.show_info()
-    elif command == "logs":
-        follow = getattr(args, 'follow', False)
-        tail = getattr(args, 'tail', 100)
-        if not service_manager.logs(server_name, follow=follow, tail=tail):
-            raise RuntimeError("Failed to get logs")
-    elif command == "generate":
-        Logger.header("GENERATING DOCKER-COMPOSE CONFIGURATION")
-        server_manager = ServerManager()
-        if not server_manager.build():
-            raise RuntimeError("Failed to generate docker-compose configuration")
+    if not service_manager.start(server_name):
+        Logger.error("Failed to start services")
+        raise typer.Exit(1)
+
+    if not server_name:
+        service_manager.show_info()
 
 
-def _handle_client_command(command: str, server: str | None, client: str | None = None) -> None:
-    """Handle client management commands"""
-    if server is None:
-        raise ValueError("Server name is required for client commands")
+@service_app.command("stop")
+def service_stop(
+    server_name: str = typer.Argument(None, help="Server name (optional)"),
+) -> None:
+    """Stop services"""
+    service_manager = ServiceManager()
 
+    # Validate server name if provided
+    if server_name:
+        available_servers = service_manager.get_available_servers()
+        if server_name not in available_servers:
+            Logger.error(f"Unknown server: {server_name}")
+            Logger.info("Available servers:")
+            for server in available_servers:
+                Logger.info(f"  - {server}")
+            raise typer.Exit(1)
+
+    Logger.header(f"STOP SERVICES{' - ' + server_name.upper() if server_name else ''}")
+
+    if not service_manager.stop(server_name):
+        Logger.error("Failed to stop services")
+        raise typer.Exit(1)
+
+
+@service_app.command("restart")
+def service_restart(
+    server_name: str = typer.Argument(None, help="Server name (optional)"),
+) -> None:
+    """Restart services"""
+    service_manager = ServiceManager()
+
+    # Validate server name if provided
+    if server_name:
+        available_servers = service_manager.get_available_servers()
+        if server_name not in available_servers:
+            Logger.error(f"Unknown server: {server_name}")
+            Logger.info("Available servers:")
+            for server in available_servers:
+                Logger.info(f"  - {server}")
+            raise typer.Exit(1)
+
+    Logger.header(f"RESTART SERVICES{' - ' + server_name.upper() if server_name else ''}")
+
+    if not service_manager.restart(server_name):
+        Logger.error("Failed to restart services")
+        raise typer.Exit(1)
+
+
+@service_app.command("status")
+def service_status(
+    server_name: str = typer.Argument(None, help="Server name (optional)"),
+) -> None:
+    """Show status"""
+    service_manager = ServiceManager()
+
+    # Validate server name if provided
+    if server_name:
+        available_servers = service_manager.get_available_servers()
+        if server_name not in available_servers:
+            Logger.error(f"Unknown server: {server_name}")
+            Logger.info("Available servers:")
+            for server in available_servers:
+                Logger.info(f"  - {server}")
+            raise typer.Exit(1)
+
+    Logger.header(f"STATUS{' - ' + server_name.upper() if server_name else ''}")
+
+    if not service_manager.status(server_name):
+        Logger.error("Failed to get status")
+        raise typer.Exit(1)
+
+    if not server_name:
+        service_manager.show_info()
+
+
+@service_app.command("logs")
+def service_logs(
+    server_name: str = typer.Argument(None, help="Server name (optional)"),
+    follow: bool = typer.Option(False, "-f", "--follow", help="Follow log output"),
+    tail: int = typer.Option(100, "-t", "--tail", help="Number of lines to show (default: 100)"),
+) -> None:
+    """Show logs"""
+    service_manager = ServiceManager()
+
+    # Validate server name if provided
+    if server_name:
+        available_servers = service_manager.get_available_servers()
+        if server_name not in available_servers:
+            Logger.error(f"Unknown server: {server_name}")
+            Logger.info("Available servers:")
+            for server in available_servers:
+                Logger.info(f"  - {server}")
+            raise typer.Exit(1)
+
+    Logger.header(f"LOGS{' - ' + server_name.upper() if server_name else ''}")
+
+    if not service_manager.logs(server_name, follow=follow, tail=tail):
+        Logger.error("Failed to get logs")
+        raise typer.Exit(1)
+
+
+@service_app.command("generate")
+def service_generate() -> None:
+    """Generate docker-compose configuration"""
+    Logger.header("GENERATING DOCKER-COMPOSE CONFIGURATION")
+    server_manager = ServerManager()
+    if not server_manager.build():
+        Logger.error("Failed to generate docker-compose configuration")
+        raise typer.Exit(1)
+
+
+# ============================================================================
+# Client Management Commands
+# ============================================================================
+
+@client_app.command("add")
+def client_add(
+    server: str = typer.Argument(..., help="Server name", callback=_validate_server_name_option),
+    client: str = typer.Argument(..., help="Client name", callback=_validate_client_name_option),
+) -> None:
+    """Add new client"""
+    Logger.header(f"ADDING CLIENT '{client}' TO SERVER '{server}'")
     client_manager = ClientManager()
-
-    if command == "add":
-        if client is None:
-            Logger.error("Client name is required for add command")
-            raise ValueError("Client name is required for add command")
-        Logger.header(f"ADDING CLIENT '{client}' TO SERVER '{server}'")
-        if not client_manager.add(server, client):
-            raise RuntimeError(f"Failed to add client '{client}' to server '{server}'")
-    elif command == "remove":
-        if client is None:
-            Logger.error("Client name is required for remove command")
-            raise ValueError("Client name is required for remove command")
-        Logger.header(f"REMOVING CLIENT '{client}' FROM SERVER '{server}'")
-        if not client_manager.remove(server, client):
-            raise RuntimeError(f"Failed to remove client '{client}' from server '{server}'")
-    elif command == "list":
-        if server:
-            Logger.header(f"LISTING CLIENTS - {server.upper()}")
-            client_manager.list_clients(server)
-        else:
-            Logger.header("LISTING ALL CLIENTS")
-            client_manager.list_all_clients()
+    if not client_manager.add(server, client):
+        Logger.error(f"Failed to add client '{client}' to server '{server}'")
+        raise typer.Exit(1)
 
 
-def _handle_key_command(output_dir: str | None) -> None:
-    """Handle key management commands"""
+@client_app.command("remove")
+def client_remove(
+    server: str = typer.Argument(..., help="Server name", callback=_validate_server_name_option),
+    client: str = typer.Argument(..., help="Client name", callback=_validate_client_name_option),
+) -> None:
+    """Remove client"""
+    Logger.header(f"REMOVING CLIENT '{client}' FROM SERVER '{server}'")
+    client_manager = ClientManager()
+    if not client_manager.remove(server, client):
+        Logger.error(f"Failed to remove client '{client}' from server '{server}'")
+        raise typer.Exit(1)
+
+
+@client_app.command("list")
+def client_list(
+    server: str = typer.Argument(None, help="Server name (optional)"),
+) -> None:
+    """List clients"""
+    client_manager = ClientManager()
+    if server:
+        Logger.header(f"LISTING CLIENTS - {server.upper()}")
+        client_manager.list_clients(server)
+    else:
+        Logger.header("LISTING ALL CLIENTS")
+        client_manager.list_all_clients()
+
+
+# ============================================================================
+# Key Management Commands
+# ============================================================================
+
+@key_app.command("generate")
+def key_generate(
+    output_dir: str = typer.Argument(None, help="Output directory (optional)"),
+) -> None:
+    """Generate key pair"""
     Logger.header("GENERATING WIREGUARD KEYS")
     key_manager = KeyManager()
     if not key_manager.generate(output_dir):
-        raise RuntimeError("Failed to generate WireGuard keys")
+        Logger.error("Failed to generate WireGuard keys")
+        raise typer.Exit(1)
 
 
-def _handle_server_command(command: str, args) -> None:
-    """Handle server management commands"""
+# ============================================================================
+# Server Management Commands
+# ============================================================================
+
+@server_app.command("create")
+def server_create(  # noqa: PLR0913
+    name: str = typer.Option(None, "-n", "--name", help="Server name", callback=_validate_server_name_option),
+    url: str = typer.Option(None, "-u", "--url", help="Server URL"),
+    port: int = typer.Option(None, "-p", "--port", help="Server port", callback=_validate_port_option),
+    subnet: str = typer.Option(None, "-s", "--subnet", help="Server subnet", callback=_validate_subnet_option),
+    dns: str = typer.Option("1.1.1.1,8.8.8.8", "-d", "--dns", help="DNS servers"),
+    allowed_ips: str = typer.Option("0.0.0.0/0", "-a", "--allowed-ips", help="Allowed IPs"),
+    peers: int = typer.Option(1, "-P", "--peers", help="Number of peers", callback=_validate_peers_option),
+) -> None:
+    """Create new server (interactive if no args provided)"""
     server_manager = ServerManager()
 
-    if command == "create":
-        Logger.header(f"CREATING SERVER '{args.name}'")
+    # Check if we should use interactive mode
+    has_name = name is not None
+    has_url = url is not None
+    has_port = port is not None
+    has_subnet = subnet is not None
+
+    if not has_name and not has_url and not has_port and not has_subnet:
+        # Interactive mode - no args provided
+        config = _interactive_server_create()
+    elif has_name and has_url and has_port and has_subnet:
+        # All required args provided - normal mode
+        Logger.header(f"CREATING SERVER '{name}'")
         config = ServerCreateConfigData(
-            name=args.name,
-            url=args.url,
-            port=args.port,
-            subnet=args.subnet,
-            dns=args.dns,
-            allowed_ips=args.allowed_ips,
-            peers=args.peers,
+            name=name,
+            url=url,
+            port=port,
+            subnet=subnet,
+            dns=dns,
+            allowed_ips=allowed_ips,
+            peers=peers,
         )
-        if not server_manager.create_server(config):
-            raise RuntimeError(f"Failed to create server '{args.name}'")
-    elif command == "list":
-        Logger.header("LISTING SERVERS")
-        server_manager.list_servers()
-    elif command == "remove":
-        Logger.header(f"REMOVING SERVER '{args.name}'")
-        if not server_manager.remove_server(args.name, args.force):
-            raise RuntimeError(f"Failed to remove server '{args.name}'")
+    else:
+        # Some args provided but not all - error
+        Logger.error("Missing required arguments. Please provide all of: -n/--name, -u/--url, -p/--port, -s/--subnet")
+        Logger.info("Or run without arguments for interactive mode")
+        raise typer.Exit(1)
+
+    if not server_manager.create_server(config):
+        Logger.error(f"Failed to create server '{config.name}'")
+        raise typer.Exit(1)
 
 
-def main():
-    parser = _create_parser()
-    args = parser.parse_args()
+@server_app.command("list")
+def server_list() -> None:
+    """List all servers"""
+    Logger.header("LISTING SERVERS")
+    server_manager = ServerManager()
+    server_manager.list_servers()
 
+
+@server_app.command("remove")
+def server_remove(
+    name: str = typer.Argument(..., help="Server name"),
+    force: bool = typer.Option(False, "--force", help="Force removal"),
+) -> None:
+    """Remove server"""
+    Logger.header(f"REMOVING SERVER '{name}'")
+    server_manager = ServerManager()
+    if not server_manager.remove_server(name, force):
+        Logger.error(f"Failed to remove server '{name}'")
+        raise typer.Exit(1)
+
+
+# ============================================================================
+# Main entry point
+# ============================================================================
+
+def main() -> None:
+    """Main entry point for the CLI"""
     # Change to project root directory
     project_root = Path(__file__).parent.parent
     os.chdir(project_root)
 
     try:
-        # Service management commands
-        if args.group == "service":
-            server_name = _parse_argument_str(args, 'server_name')
-            _handle_service_command(args.command, args, server_name)
-
-        # Client management commands
-        elif args.group == "client":
-            server = _parse_argument_str(args, 'server')
-            client = _parse_argument_str(args, 'client')
-            _handle_client_command(args.command, server, client)
-
-        # Key management commands
-        elif args.group == "key":
-            output_dir = _parse_argument_str(args, 'output_dir')
-            _handle_key_command(output_dir)
-
-        # Server management commands
-        elif args.group == "server":
-            _handle_server_command(args.command, args)
-
+        app()
     except Exception as e:
         Logger.error(f"Command failed: {e}")
-        sys.exit(1)
+        raise typer.Exit(1) from e
 
 
 if __name__ == "__main__":

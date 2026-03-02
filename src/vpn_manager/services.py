@@ -134,6 +134,15 @@ class ServiceManager:
                 )
                 print(result.stdout)
 
+                Logger.info(f"WireGuard status for {server_name}:")
+                try:
+                    subprocess.run(
+                        self.compose_cmd + ["exec", container_name, "wg", "show"],
+                        check=True,
+                    )
+                except subprocess.CalledProcessError:
+                    Logger.warning(f"Could not get WireGuard status for {server_name}")
+
                 Logger.info(f"Recent logs for {server_name}:")
                 subprocess.run(
                     self.compose_cmd + ["logs", "--tail=10", container_name], check=True
@@ -148,6 +157,17 @@ class ServiceManager:
                     check=True,
                 )
                 print(result.stdout)
+
+                Logger.info("WireGuard status for all servers:")
+                for server, container in self.server_containers.items():
+                    try:
+                        Logger.info(f"\n{server}:")
+                        subprocess.run(
+                            self.compose_cmd + ["exec", container, "wg", "show"],
+                            check=True,
+                        )
+                    except subprocess.CalledProcessError:
+                        Logger.warning(f"Could not get WireGuard status for {server}")
 
                 Logger.info("Recent logs for all services:")
                 subprocess.run(self.compose_cmd + ["logs", "--tail=5"], check=True)

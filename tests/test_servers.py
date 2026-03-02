@@ -2,7 +2,6 @@
 Tests for servers.py module
 """
 
-import os
 from unittest.mock import patch
 
 from vpn_manager.servers.servers import (
@@ -337,17 +336,11 @@ class TestServerManager:
     @patch("vpn_manager.servers.servers.Logger")
     def test_build_no_servers_dir(self, mock_logger, tmp_dir):
         """Test build when servers directory doesn't exist"""
-        # Change to tmp_dir where servers directory doesn't exist
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(tmp_dir)
-            manager = ServerManager()
-            result = manager.build()
+        manager = ServerManager()
+        result = manager.build()
 
-            assert result is False
-            mock_logger.error.assert_called()
-        finally:
-            os.chdir(original_cwd)
+        assert result is False
+        mock_logger.error.assert_called()
 
     @patch("vpn_manager.servers.servers.yaml")
     @patch("vpn_manager.servers.servers.Logger")
@@ -474,16 +467,10 @@ class TestServerManager:
     @patch("vpn_manager.servers.servers.Logger")
     def test_list_servers_no_servers_dir(self, mock_logger, tmp_dir):
         """Test list_servers when servers directory doesn't exist"""
-        # Change to tmp_dir where servers directory doesn't exist
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(tmp_dir)
-            manager = ServerManager()
-            manager.list_servers()
+        manager = ServerManager()
+        manager.list_servers()
 
-            mock_logger.info.assert_called()
-        finally:
-            os.chdir(original_cwd)
+        mock_logger.info.assert_called()
 
     @patch("vpn_manager.servers.servers.Logger")
     def test_list_servers_empty(self, mock_logger, tmp_dir):

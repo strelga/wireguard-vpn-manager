@@ -2,22 +2,16 @@
 Pytest configuration and fixtures for vpn-manager tests
 """
 
-import os
-import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 
-@pytest.fixture
-def tmp_dir():
-    """Create a temporary directory for tests"""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        original_cwd = os.getcwd()
-        os.chdir(tmpdir)
-        yield Path(tmpdir)
-        os.chdir(original_cwd)
+@pytest.fixture(autouse=True)
+def tmp_dir(tmp_path, monkeypatch):
+    """Create a temporary directory for tests (autouse)"""
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
 
 
 @pytest.fixture
@@ -104,7 +98,17 @@ AllowedIPs = 10.13.13.2/32
 
 
 @pytest.fixture
-def mock_logger():
-    """Mock Logger to suppress output during tests"""
-    with patch("vpn_manager.utils.Logger") as mock:
-        yield mock
+def test_server_dir(tmp_dir):
+    """Create a complete test server directory structure"""
+    server_dir = tmp_dir / "servers" / "test-server"
+    server_dir.mkdir(parents=True)
+    (server_dir / "config").mkdir()
+    (server_dir / "clients").mkdir()
+    return server_dir
+
+
+@pytest.fixture
+def mock_chdir():
+    """Mock os.chdir to avoid side effects"""
+    with patch("os.chdir"):
+        yield

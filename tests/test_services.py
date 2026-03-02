@@ -14,15 +14,9 @@ class TestServiceManager:
 
     @patch("vpn_manager.services.DockerManager")
     @patch("vpn_manager.servers.utils.ServerConfig")
-    def test_init_loads_server_containers(self, mock_wg_config, mock_docker, tmp_dir):
+    def test_init_loads_server_containers(self, mock_wg_config, mock_docker, test_server_dir):
         """Test ServiceManager initialization loads server containers"""
         mock_docker.get_compose_command.return_value = "docker compose"
-
-        # Create a test server directory
-        servers_dir = tmp_dir / "servers"
-        servers_dir.mkdir()
-        test_server_dir = servers_dir / "test-server"
-        test_server_dir.mkdir()
 
         mock_config_instance = MagicMock()
         mock_config_instance.get_server_info.return_value = {
@@ -30,15 +24,14 @@ class TestServiceManager:
         }
         mock_wg_config.return_value = mock_config_instance
 
-        with patch("vpn_manager.services.Path", return_value=servers_dir):
-            manager = ServiceManager()
+        manager = ServiceManager()
 
         assert manager.compose_cmd == ["docker", "compose"]
         assert "test-server" in manager.server_containers
 
     @patch("vpn_manager.services.DockerManager")
     @patch("vpn_manager.servers.utils.ServerConfig")
-    def test_init_handles_config_error(self, mock_wg_config, mock_docker):
+    def test_init_handles_config_error(self, mock_wg_config, mock_docker, test_server_dir):
         """Test ServiceManager initialization handles config errors gracefully"""
         mock_docker.get_compose_command.return_value = "docker compose"
 
@@ -78,9 +71,8 @@ class TestServiceManager:
         servers_dir = tmp_dir / "servers"
         servers_dir.mkdir()
 
-        with patch("vpn_manager.services.Path", return_value=servers_dir):
-            manager = ServiceManager()
-            servers = manager.get_available_servers()
+        manager = ServiceManager()
+        servers = manager.get_available_servers()
 
         assert len(servers) == 0
 
@@ -265,20 +257,28 @@ class TestServiceManager:
         result = manager.status("test-server")
 
         assert result is True
-        assert mock_run.call_count == 2  # ps and logs
+        # Should call subprocess.run for ps, wg show, and logs
+        assert mock_run.call_count == 3
 
     @patch("vpn_manager.services.DockerManager")
     @patch("subprocess.run")
-    def test_status_all_servers(self, mock_run, mock_docker):
+    def test_status_all_servers(self, mock_run, mock_docker, tmp_dir):
         """Test getting status of all servers"""
         mock_docker.get_compose_command.return_value = "docker compose"
         mock_run.return_value = MagicMock(stdout="Status output")
+
+        # Create test servers
+        servers_dir = tmp_dir / "servers"
+        servers_dir.mkdir()
+        (servers_dir / "server1").mkdir()
+        (servers_dir / "server2").mkdir()
 
         manager = ServiceManager()
         result = manager.status()
 
         assert result is True
-        assert mock_run.call_count == 2  # ps and logs
+        # Should call subprocess.run for ps, wg show (2 servers), and logs
+        assert mock_run.call_count == 4
 
     @patch("vpn_manager.services.DockerManager")
     @patch("subprocess.run")
@@ -324,10 +324,8 @@ class TestServiceManager:
         mock_wg_config.return_value = mock_config_instance
 
         manager = ServiceManager()
-        manager.show_info()
-
         # Should not raise any exceptions
-        assert True
+        manager.show_info()
 
     @patch("vpn_manager.services.DockerManager")
     @patch("vpn_manager.servers.utils.ServerConfig")
@@ -342,10 +340,8 @@ class TestServiceManager:
         mock_wg_config.side_effect = Exception("Config error")
 
         manager = ServiceManager()
-        manager.show_info()
-
         # Should not raise any exceptions
-        assert True
+        manager.show_info()
 
     @patch("vpn_manager.services.DockerManager")
     @patch("vpn_manager.servers.utils.ServerConfig")
@@ -388,9 +384,9 @@ class TestServiceManager:
         servers_dir = tmp_dir / "servers"
         servers_dir.mkdir()
 
-        with patch("vpn_manager.services.Path", return_value=servers_dir):
-            manager = ServiceManager()
-            manager._load_server_containers()
+        manager = ServiceManager()
+        manager._load_server_containers()
+        assert len(manager.server_containers) == 0
 
 
     @patch("vpn_manager.services.DockerManager")

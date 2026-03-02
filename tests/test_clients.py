@@ -111,9 +111,6 @@ class TestClientManager:
         self, mock_logger, mock_wg_config, mock_validate_client, mock_validate_server
     ):
         """Test client addition when client already exists"""
-        mock_validate_server.return_value = True
-        mock_validate_client.return_value = True
-
         mock_config_instance = MagicMock()
         mock_config_instance.clients_dir = Path("/tmp/clients")
         mock_wg_config.return_value = mock_config_instance
@@ -134,9 +131,6 @@ class TestClientManager:
         self, mock_logger, mock_docker, mock_wg_config, mock_validate_client, mock_validate_server
     ):
         """Test successful client removal"""
-        mock_validate_server.return_value = True
-        mock_validate_client.return_value = True
-
         mock_config_instance = MagicMock()
         mock_config_instance.get_server_info.return_value = ServerConfigData(
             name="test-server",
@@ -175,9 +169,6 @@ class TestClientManager:
         self, mock_logger, mock_wg_config, mock_validate_client, mock_validate_server
     ):
         """Test client removal when client doesn't exist"""
-        mock_validate_server.return_value = True
-        mock_validate_client.return_value = True
-
         mock_config_instance = MagicMock()
         mock_wg_config.return_value = mock_config_instance
 
@@ -193,8 +184,6 @@ class TestClientManager:
     @patch("vpn_manager.clients.Logger")
     def test_list_clients_success(self, mock_logger, mock_wg_config, mock_validate_server):
         """Test successful client listing"""
-        mock_validate_server.return_value = True
-
         mock_config_instance = MagicMock()
         mock_clients_dir = MagicMock()
         mock_clients_dir.exists.return_value = True
@@ -221,8 +210,6 @@ class TestClientManager:
     @patch("vpn_manager.clients.Logger")
     def test_list_clients_empty(self, mock_logger, mock_wg_config, mock_validate_server):
         """Test client listing when no clients exist"""
-        mock_validate_server.return_value = True
-
         mock_config_instance = MagicMock()
         mock_clients_dir = MagicMock()
         mock_clients_dir.exists.return_value = True

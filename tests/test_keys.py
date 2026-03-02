@@ -2,6 +2,7 @@
 Tests for keys.py module
 """
 
+import sys
 from unittest.mock import patch
 
 from vpn_manager.keys import KeyManager
@@ -42,11 +43,12 @@ class TestKeyManager:
         assert (output_dir / "private.key").read_text() == "private_key"
         assert (output_dir / "public.key").read_text() == "public_key"
 
-        # Check file permissions
-        private_stat = (output_dir / "private.key").stat()
-        public_stat = (output_dir / "public.key").stat()
-        assert oct(private_stat.st_mode)[-3:] == "600"
-        assert oct(public_stat.st_mode)[-3:] == "644"
+        # Check file permissions (skip on Windows)
+        if sys.platform != "win32":
+            private_stat = (output_dir / "private.key").stat()
+            public_stat = (output_dir / "public.key").stat()
+            assert oct(private_stat.st_mode)[-3:] == "600"
+            assert oct(public_stat.st_mode)[-3:] == "644"
 
     @patch("vpn_manager.keys.KeyGenerator")
     @patch("vpn_manager.keys.Logger")
@@ -85,3 +87,22 @@ class TestKeyManager:
         assert result is True
         assert output_dir.exists()
         assert (output_dir / "private.key").exists()
+        assert (output_dir / "public.key").exists()
+
+    @patch("vpn_manager.keys.KeyGenerator")
+    @patch("vpn_manager.keys.Logger")
+    def test_generate_overwrites_existing_files(self, mock_logger, mock_key_generator, tmp_dir):
+        """Test that existing files are overwritten"""
+        mock_key_generator.generate_keypair.return_value = ("new_private_key", "new_public_key")
+
+        output_dir = tmp_dir / "keys"
+        output_dir.mkdir()
+        (output_dir / "private.key").write_text("old_private_key")
+        (output_dir / "public.key").write_text("old_public_key")
+
+        manager = KeyManager()
+        result = manager.generate(output_directory=str(output_dir))
+
+        assert result is True
+        assert (output_dir / "private.key").read_text() == "new_private_key"
+        assert (output_dir / "public.key").read_text() == "new_public_key"

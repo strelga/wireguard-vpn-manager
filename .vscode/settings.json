@@ -3,7 +3,11 @@
         "addopts",
         "ALLOWEDIPS",
         "ansiutf",
+        "argcomplete",
         "asctime",
+        "autouse",
+        "capsys",
+        "compdef",
         "confs",
         "direnv",
         "ensurepath",
@@ -38,10 +42,13 @@
         "SERVERPORT",
         "SERVERURL",
         "setuptools",
+        "shellcode",
         "sysctls",
         "testpaths",
+        "typer",
         "usermod",
-        "venv"
+        "venv",
+        "venvs"
     ],
     "python.defaultInterpreterPath": "~/.local/pipx/venvs/wireguard-vpn-manager/bin/python3.14",
     "python.analysis.extraPaths": [

@@ -201,26 +201,30 @@ class TestWireGuardConfig:
         next_ip = config.get_next_client_ip()
         assert next_ip == "10.13.13.2"
 
-    def test_get_next_client_ip_no_available_ips(self, tmp_dir: Path, sample_server_config: dict[str, Any]) -> None:
-        """Test get_next_client_ip when no IPs are available"""
+    def test_get_next_client_ip_with_many_clients(self, tmp_dir: Path, sample_server_config: dict[str, Any]) -> None:
+        """Test get_next_client_ip with many existing clients"""
         config = ServerConfig("test-server")
         config.server_config_file.write_text(yaml.dump(sample_server_config))
 
-        # Create a config with all IPs used
-        # In a /24 network, hosts() gives us .2 to .254 (253 hosts)
-        # Server uses .1, so we need to use all .2 to .254
+        # Create a config with several clients
         wg_config = "[Interface]\nPrivateKey = test\nAddress = 10.13.13.1/24\n"
-        for i in range(2, 255):  # Use all available IPs (.2 to .254)
-            wg_config += f"\n# Client: client{i}\n[Peer]\nPublicKey = key{i}\nAllowedIPs = 10.13.13.{i}/32\n"
+        for i in range(2, 10):  # Add clients .2 to .9
+            wg_config += f"\n# Client: client{i}\n[Peer]\nPublicKey = key{i}\nAllowedIPs = 10.13.13.{i}/32\nAddress = 10.13.13.{i}/32\n"
         config.wg_config_file.write_text(wg_config)
 
-        # The implementation should raise RuntimeError when all IPs are used
-        # Note: The function looks for "Address" in [Peer] sections, but the sample config
-        # uses "AllowedIPs" instead. We need to add Address lines to properly test this.
-        wg_config_with_address = "[Interface]\nPrivateKey = test\nAddress = 10.13.13.1/24\n"
-        for i in range(2, 255):  # Use all available IPs (.2 to .254)
-            wg_config_with_address += f"\n# Client: client{i}\n[Peer]\nPublicKey = key{i}\nAllowedIPs = 10.13.13.{i}/32\nAddress = 10.13.13.{i}/32\n"
-        config.wg_config_file.write_text(wg_config_with_address)
+        next_ip = config.get_next_client_ip()
+        assert next_ip == "10.13.13.10"
+
+    def test_get_next_client_ip_exhausted(self, tmp_dir: Path, sample_server_config: dict[str, Any]) -> None:
+        """Test get_next_client_ip when all IPs are exhausted"""
+        config = ServerConfig("test-server")
+        config.server_config_file.write_text(yaml.dump(sample_server_config))
+
+        # Create a config with all IPs used (.2 to .254)
+        wg_config = "[Interface]\nPrivateKey = test\nAddress = 10.13.13.1/24\n"
+        for i in range(2, 255):  # Use all available IPs
+            wg_config += f"\n# Client: client{i}\n[Peer]\nPublicKey = key{i}\nAllowedIPs = 10.13.13.{i}/32\nAddress = 10.13.13.{i}/32\n"
+        config.wg_config_file.write_text(wg_config)
 
         with pytest.raises(RuntimeError):
             config.get_next_client_ip()
@@ -296,12 +300,12 @@ class TestDockerManager:
     @patch("subprocess.run")
     def test_get_compose_command_docker_compose_v2(self, mock_run: MagicMock) -> None:
         """Test get_compose_command with docker compose v2"""
-        # First call fails (docker-compose not found), second succeeds (docker compose)
-        mock_run.side_effect = [
-            FileNotFoundError(),
-            MagicMock(),
-            MagicMock(),  # Additional call for version check
-        ]
+        def side_effect_func(*args, **kwargs):
+            if "docker-compose" in args[0]:
+                raise FileNotFoundError()
+            return MagicMock()
+
+        mock_run.side_effect = side_effect_func
         command = DockerManager.get_compose_command()
         assert command == "docker compose"
 
