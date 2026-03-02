@@ -6,8 +6,10 @@ WireGuard Services Management Module
 import subprocess
 from pathlib import Path
 
-from .servers.utils import ServerConfig
-from .utils import Color, DockerManager, Logger
+from vpn_manager.servers.utils import ServerConfig
+from vpn_manager.utils import Color, Logger
+
+from .docker import DockerManager
 
 
 class ServiceManager:

@@ -14,13 +14,13 @@ from vpn_manager.servers.utils import ServerConfigData
 class TestClientManager:
     """Test ClientManager class"""
 
-    @patch("vpn_manager.clients.validate_server_name")
-    @patch("vpn_manager.clients.validate_client_name")
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.KeyGenerator")
-    @patch("vpn_manager.clients.DockerManager")
-    @patch("vpn_manager.clients.QRCodeGenerator")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.validate_server_name")
+    @patch("vpn_manager.clients.clients.validate_client_name")
+    @patch("vpn_manager.clients.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.KeyGenerator")
+    @patch("vpn_manager.clients.clients.DockerManager")
+    @patch("vpn_manager.clients.clients.QRCodeGenerator")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_add_client_success(
         self,
         mock_logger,
@@ -76,9 +76,9 @@ class TestClientManager:
         mock_validate_client.assert_called_once_with("test-client")
         mock_key_gen.generate_keypair.assert_called_once()
 
-    @patch("vpn_manager.clients.validate_server_name")
-    @patch("vpn_manager.clients.validate_client_name")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.validate_server_name")
+    @patch("vpn_manager.clients.clients.validate_client_name")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_add_client_invalid_server(self, mock_logger, mock_validate_client, mock_validate_server):
         """Test client addition with invalid server"""
         mock_validate_server.return_value = False
@@ -89,9 +89,9 @@ class TestClientManager:
         assert result is False
         mock_validate_server.assert_called_once_with("invalid-server")
 
-    @patch("vpn_manager.clients.validate_server_name")
-    @patch("vpn_manager.clients.validate_client_name")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.validate_server_name")
+    @patch("vpn_manager.clients.clients.validate_client_name")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_add_client_invalid_client_name(self, mock_logger, mock_validate_client, mock_validate_server):
         """Test client addition with invalid client name"""
         mock_validate_server.return_value = True
@@ -103,10 +103,10 @@ class TestClientManager:
         assert result is False
         mock_validate_client.assert_called_once_with("invalid@client")
 
-    @patch("vpn_manager.clients.validate_server_name")
-    @patch("vpn_manager.clients.validate_client_name")
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.validate_server_name")
+    @patch("vpn_manager.clients.clients.validate_client_name")
+    @patch("vpn_manager.clients.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_add_client_already_exists(
         self, mock_logger, mock_wg_config, mock_validate_client, mock_validate_server
     ):
@@ -122,11 +122,11 @@ class TestClientManager:
         assert result is False
         mock_logger.error.assert_called()
 
-    @patch("vpn_manager.clients.validate_server_name")
-    @patch("vpn_manager.clients.validate_client_name")
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.DockerManager")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.validate_server_name")
+    @patch("vpn_manager.clients.clients.validate_client_name")
+    @patch("vpn_manager.clients.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.DockerManager")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_remove_client_success(
         self, mock_logger, mock_docker, mock_wg_config, mock_validate_client, mock_validate_server
     ):
@@ -161,10 +161,10 @@ class TestClientManager:
 
         assert result is True
 
-    @patch("vpn_manager.clients.validate_server_name")
-    @patch("vpn_manager.clients.validate_client_name")
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.validate_server_name")
+    @patch("vpn_manager.clients.clients.validate_client_name")
+    @patch("vpn_manager.clients.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_remove_client_not_found(
         self, mock_logger, mock_wg_config, mock_validate_client, mock_validate_server
     ):
@@ -179,9 +179,9 @@ class TestClientManager:
         assert result is False
         mock_logger.error.assert_called()
 
-    @patch("vpn_manager.clients.validate_server_name")
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.validate_server_name")
+    @patch("vpn_manager.clients.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_list_clients_success(self, mock_logger, mock_wg_config, mock_validate_server):
         """Test successful client listing"""
         mock_config_instance = MagicMock()
@@ -205,9 +205,9 @@ class TestClientManager:
         assert "client2" in clients
         assert "client3" in clients
 
-    @patch("vpn_manager.clients.validate_server_name")
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.validate_server_name")
+    @patch("vpn_manager.clients.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_list_clients_empty(self, mock_logger, mock_wg_config, mock_validate_server):
         """Test client listing when no clients exist"""
         mock_config_instance = MagicMock()
@@ -224,8 +224,8 @@ class TestClientManager:
 
         assert len(clients) == 0
 
-    @patch("vpn_manager.clients.validate_server_name")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.validate_server_name")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_list_clients_invalid_server(self, mock_logger, mock_validate_server):
         """Test client listing with invalid server"""
         mock_validate_server.return_value = False
@@ -235,7 +235,7 @@ class TestClientManager:
 
         assert len(clients) == 0
 
-    @patch("vpn_manager.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.ServerConfig")
     def test_check_client_exists_in_file(self, mock_wg_config):
         """Test _check_client_exists when client exists in file"""
         mock_config_instance = MagicMock()
@@ -251,7 +251,7 @@ class TestClientManager:
 
         assert result is True
 
-    @patch("vpn_manager.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.ServerConfig")
     def test_check_client_exists_in_config(self, mock_wg_config):
         """Test _check_client_exists when client exists in server config"""
         mock_config_instance = MagicMock()
@@ -270,7 +270,7 @@ class TestClientManager:
 
         assert result is True
 
-    @patch("vpn_manager.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.ServerConfig")
     def test_check_client_not_exists(self, mock_wg_config):
         """Test _check_client_exists when client doesn't exist"""
         mock_config_instance = MagicMock()
@@ -288,18 +288,16 @@ class TestClientManager:
 
         assert result is False
 
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.subprocess")
-    @patch("vpn_manager.clients.KeyGenerator")
-    def test_get_server_public_key_with_wg(self, mock_key_gen, mock_subprocess, mock_wg_config):
-        """Test _get_server_public_key using local wg command"""
+    @patch("vpn_manager.clients.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.KeyGenerator")
+    def test_get_server_public_key(self, mock_key_gen, mock_wg_config):
+        """Test _get_server_public_key"""
         mock_config_instance = MagicMock()
         mock_config_instance.wg_config_file.exists.return_value = True
         mock_config_instance.wg_config_file.read.return_value = "[Interface]\nPrivateKey = test_private_key\n"
         mock_wg_config.return_value = mock_config_instance
 
-        mock_key_gen.command_exists.return_value = True
-        mock_subprocess.run.return_value = MagicMock(stdout="public_key\n")
+        mock_key_gen.generate_public_key.return_value = "public_key"
 
         manager = ClientManager()
         with patch("builtins.open", mock_open(read_data="[Interface]\nPrivateKey = test_private_key\n")):
@@ -307,26 +305,8 @@ class TestClientManager:
 
         assert public_key == "public_key"
 
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.subprocess")
-    @patch("vpn_manager.clients.KeyGenerator")
-    def test_get_server_public_key_with_docker(self, mock_key_gen, mock_subprocess, mock_wg_config):
-        """Test _get_server_public_key using Docker"""
-        mock_config_instance = MagicMock()
-        mock_config_instance.wg_config_file.exists.return_value = True
-        mock_config_instance.wg_config_file.read.return_value = "[Interface]\nPrivateKey = test_private_key\n"
-        mock_wg_config.return_value = mock_config_instance
 
-        mock_key_gen.command_exists.side_effect = lambda cmd: cmd == "docker"
-        mock_subprocess.run.return_value = MagicMock(stdout="public_key\n")
-
-        manager = ClientManager()
-        with patch("builtins.open", mock_open(read_data="[Interface]\nPrivateKey = test_private_key\n")):
-            public_key = manager._get_server_public_key(mock_config_instance)
-
-        assert public_key == "public_key"
-
-    @patch("vpn_manager.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.ServerConfig")
     def test_get_server_public_key_no_private_key(self, mock_wg_config):
         """Test _get_server_public_key when private key not found"""
         mock_config_instance = MagicMock()
@@ -338,8 +318,8 @@ class TestClientManager:
         with pytest.raises(ValueError):
             manager._get_server_public_key(mock_config_instance)
 
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_add_peer_to_server_config(self, mock_logger, mock_wg_config):
         """Test _add_peer_to_server_config"""
         mock_config_instance = MagicMock()
@@ -355,8 +335,8 @@ class TestClientManager:
         mock_file.assert_called_once()
         mock_logger.success.assert_called_once()
 
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_create_client_config(self, mock_logger, mock_wg_config):
         """Test _create_client_config"""
 
@@ -389,8 +369,8 @@ class TestClientManager:
         assert "PublicKey = server_public_key" in config_content
         mock_logger.success.assert_called_once()
 
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_remove_peer_from_server_config_success(self, mock_logger, mock_wg_config):
         """Test _remove_peer_from_server_config success"""
         mock_config_instance = MagicMock()
@@ -407,8 +387,8 @@ class TestClientManager:
         assert result is True
         mock_logger.success.assert_called_once()
 
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_remove_peer_from_server_config_not_found(self, mock_logger, mock_wg_config):
         """Test _remove_peer_from_server_config when client not found"""
         mock_config_instance = MagicMock()
@@ -422,8 +402,8 @@ class TestClientManager:
         assert result is False
         mock_logger.warning.assert_called_once()
 
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_remove_client_files_success(self, mock_logger, mock_wg_config):
         """Test _remove_client_files success"""
         mock_config_instance = MagicMock()
@@ -440,8 +420,8 @@ class TestClientManager:
         assert result is True
         mock_logger.success.assert_called_once()
 
-    @patch("vpn_manager.clients.ServerConfig")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.ServerConfig")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_remove_client_files_not_found(self, mock_logger, mock_wg_config):
         """Test _remove_client_files when file not found"""
         mock_config_instance = MagicMock()
@@ -455,8 +435,8 @@ class TestClientManager:
         assert result is False
         mock_logger.warning.assert_called_once()
 
-    @patch("vpn_manager.clients.ServiceManager")
-    @patch("vpn_manager.clients.Logger")
+    @patch("vpn_manager.clients.clients.ServiceManager")
+    @patch("vpn_manager.clients.clients.Logger")
     def test_list_all_clients(self, mock_logger, mock_service_manager):
         """Test list_all_clients"""
         mock_service_instance = MagicMock()

@@ -12,7 +12,7 @@ from vpn_manager.services import ServiceManager
 class TestServiceManager:
     """Test ServiceManager class"""
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("vpn_manager.servers.utils.ServerConfig")
     def test_init_loads_server_containers(self, mock_wg_config, mock_docker, test_server_dir):
         """Test ServiceManager initialization loads server containers"""
@@ -29,7 +29,7 @@ class TestServiceManager:
         assert manager.compose_cmd == ["docker", "compose"]
         assert "test-server" in manager.server_containers
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("vpn_manager.servers.utils.ServerConfig")
     def test_init_handles_config_error(self, mock_wg_config, mock_docker, test_server_dir):
         """Test ServiceManager initialization handles config errors gracefully"""
@@ -43,7 +43,7 @@ class TestServiceManager:
         # Should still have server with default container name
         assert len(manager.server_containers) > 0
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     def test_get_available_servers(self, mock_docker, tmp_dir):
         """Test get_available_servers"""
         mock_docker.get_compose_command.return_value = "docker compose"
@@ -62,7 +62,7 @@ class TestServiceManager:
         assert "server2" in servers
         assert "file.txt" not in servers
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     def test_get_available_servers_no_servers(self, mock_docker, tmp_dir):
         """Test get_available_servers when no servers exist"""
         mock_docker.get_compose_command.return_value = "docker compose"
@@ -76,7 +76,7 @@ class TestServiceManager:
 
         assert len(servers) == 0
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_start_specific_server(self, mock_run, mock_docker):
         """Test starting a specific server"""
@@ -93,7 +93,7 @@ class TestServiceManager:
             ["docker", "compose", "up", "-d", "wireguard-test"], check=True
         )
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_start_all_servers(self, mock_run, mock_docker):
         """Test starting all servers"""
@@ -106,7 +106,7 @@ class TestServiceManager:
         assert result is True
         mock_run.assert_called_once_with(["docker", "compose", "up", "-d"], check=True)
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_start_unknown_server(self, mock_run, mock_docker):
         """Test starting an unknown server"""
@@ -120,7 +120,7 @@ class TestServiceManager:
         assert result is False
         mock_run.assert_not_called()
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_start_exception(self, mock_run, mock_docker):
         """Test start when exception occurs"""
@@ -132,7 +132,7 @@ class TestServiceManager:
 
         assert result is False
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_stop_specific_server(self, mock_run, mock_docker):
         """Test stopping a specific server"""
@@ -149,7 +149,7 @@ class TestServiceManager:
             ["docker", "compose", "stop", "wireguard-test"], check=True
         )
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_stop_all_servers(self, mock_run, mock_docker):
         """Test stopping all servers"""
@@ -162,7 +162,7 @@ class TestServiceManager:
         assert result is True
         mock_run.assert_called_once_with(["docker", "compose", "down"], check=True)
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_stop_unknown_server(self, mock_run, mock_docker):
         """Test stopping an unknown server"""
@@ -176,7 +176,7 @@ class TestServiceManager:
         assert result is False
         mock_run.assert_not_called()
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_stop_exception(self, mock_run, mock_docker):
         """Test stop when exception occurs"""
@@ -188,7 +188,7 @@ class TestServiceManager:
 
         assert result is False
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_restart_specific_server(self, mock_run, mock_docker):
         """Test restarting a specific server"""
@@ -205,7 +205,7 @@ class TestServiceManager:
             ["docker", "compose", "restart", "wireguard-test"], check=True
         )
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_restart_all_servers(self, mock_run, mock_docker):
         """Test restarting all servers"""
@@ -218,7 +218,7 @@ class TestServiceManager:
         assert result is True
         mock_run.assert_called_once_with(["docker", "compose", "restart"], check=True)
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_restart_unknown_server(self, mock_run, mock_docker):
         """Test restarting an unknown server"""
@@ -232,7 +232,7 @@ class TestServiceManager:
         assert result is False
         mock_run.assert_not_called()
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_restart_exception(self, mock_run, mock_docker):
         """Test restart when exception occurs"""
@@ -244,7 +244,7 @@ class TestServiceManager:
 
         assert result is False
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_status_specific_server(self, mock_run, mock_docker):
         """Test getting status of a specific server"""
@@ -260,7 +260,7 @@ class TestServiceManager:
         # Should call subprocess.run for ps, wg show, and logs
         assert mock_run.call_count == 3
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_status_all_servers(self, mock_run, mock_docker, tmp_dir):
         """Test getting status of all servers"""
@@ -280,7 +280,7 @@ class TestServiceManager:
         # Should call subprocess.run for ps, wg show (2 servers), and logs
         assert mock_run.call_count == 4
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_status_unknown_server(self, mock_run, mock_docker):
         """Test getting status of an unknown server"""
@@ -294,7 +294,7 @@ class TestServiceManager:
         assert result is False
         mock_run.assert_not_called()
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_status_exception(self, mock_run, mock_docker):
         """Test status when exception occurs"""
@@ -306,7 +306,7 @@ class TestServiceManager:
 
         assert result is False
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("vpn_manager.servers.utils.ServerConfig")
     def test_show_info(self, mock_wg_config, mock_docker, tmp_dir):
         """Test show_info"""
@@ -327,7 +327,7 @@ class TestServiceManager:
         # Should not raise any exceptions
         manager.show_info()
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("vpn_manager.servers.utils.ServerConfig")
     def test_show_info_with_config_error(self, mock_wg_config, mock_docker, tmp_dir):
         """Test show_info handles config errors gracefully"""
@@ -343,7 +343,7 @@ class TestServiceManager:
         # Should not raise any exceptions
         manager.show_info()
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("vpn_manager.servers.utils.ServerConfig")
     def test_load_server_containers(self, mock_wg_config, mock_docker, tmp_dir):
         """Test _load_server_containers"""
@@ -375,7 +375,7 @@ class TestServiceManager:
         assert manager.server_containers["server1"] == "wireguard-server1"
         assert manager.server_containers["server2"] == "wireguard-server2"
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     def test_load_server_containers_no_servers(self, mock_docker, tmp_dir):
         """Test _load_server_containers when no servers exist"""
         mock_docker.get_compose_command.return_value = "docker compose"
@@ -389,7 +389,7 @@ class TestServiceManager:
         assert len(manager.server_containers) == 0
 
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_logs_specific_server(self, mock_run, mock_docker) -> None:
         """Test showing logs for a specific server"""
@@ -406,7 +406,7 @@ class TestServiceManager:
             ["docker", "compose", "logs", "--tail=100", "wireguard-test"], check=True
         )
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_logs_all_servers(self, mock_run, mock_docker) -> None:
         """Test showing logs for all servers"""
@@ -419,7 +419,7 @@ class TestServiceManager:
         assert result is True
         mock_run.assert_called_once_with(["docker", "compose", "logs", "--tail=100"], check=True)
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_logs_with_follow(self, mock_run, mock_docker) -> None:
         """Test showing logs with follow flag"""
@@ -436,7 +436,7 @@ class TestServiceManager:
             ["docker", "compose", "logs", "-f", "--tail=100", "wireguard-test"], check=True
         )
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_logs_with_custom_tail(self, mock_run, mock_docker) -> None:
         """Test showing logs with custom tail value"""
@@ -453,7 +453,7 @@ class TestServiceManager:
             ["docker", "compose", "logs", "--tail=50", "wireguard-test"], check=True
         )
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_logs_with_follow_and_tail(self, mock_run, mock_docker) -> None:
         """Test showing logs with both follow and tail options"""
@@ -470,7 +470,7 @@ class TestServiceManager:
             ["docker", "compose", "logs", "-f", "--tail=25", "wireguard-test"], check=True
         )
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_logs_unknown_server(self, mock_run, mock_docker) -> None:
         """Test showing logs for an unknown server"""
@@ -484,7 +484,7 @@ class TestServiceManager:
         assert result is False
         mock_run.assert_not_called()
 
-    @patch("vpn_manager.services.DockerManager")
+    @patch("vpn_manager.services.services.DockerManager")
     @patch("subprocess.run")
     def test_logs_exception(self, mock_run, mock_docker) -> None:
         """Test logs when exception occurs"""

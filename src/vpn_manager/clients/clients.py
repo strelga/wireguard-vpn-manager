@@ -3,18 +3,12 @@
 WireGuard Client Management Module
 """
 
-import subprocess
+from vpn_manager.keys import KeyGenerator
+from vpn_manager.servers.utils import ServerConfig, validate_server_name
+from vpn_manager.services import DockerManager, ServiceManager
+from vpn_manager.utils import Color, Logger, QRCodeGenerator
 
-from .servers.utils import ServerConfig, validate_server_name
-from .services import ServiceManager
-from .utils import (
-    Color,
-    DockerManager,
-    KeyGenerator,
-    Logger,
-    QRCodeGenerator,
-    validate_client_name,
-)
+from .utils import validate_client_name
 
 
 class ClientManager:
@@ -44,33 +38,7 @@ class ClientManager:
                 private_key = stripped_line.split("=")[1].strip()
                 # Generate public key from private key
                 try:
-                    if KeyGenerator.command_exists("wg"):
-                        result = subprocess.run(
-                            ["wg", "pubkey"],
-                            input=private_key,
-                            capture_output=True,
-                            text=True,
-                            check=True,
-                        )
-                        return result.stdout.strip()
-                    else:
-                        # Use Docker
-                        result = subprocess.run(
-                            [
-                                "docker",
-                                "run",
-                                "--rm",
-                                "-i",
-                                "linuxserver/wireguard:latest",
-                                "wg",
-                                "pubkey",
-                            ],
-                            input=private_key,
-                            capture_output=True,
-                            text=True,
-                            check=True,
-                        )
-                        return result.stdout.strip()
+                    return KeyGenerator.generate_public_key(private_key)
                 except Exception as e:
                     raise RuntimeError(f"Failed to generate server public key: {e}") from e
 

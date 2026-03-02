@@ -10,11 +10,9 @@ from typing import TypedDict
 
 import yaml
 
-from ..utils import (
-    Color,
-    KeyGenerator,
-    Logger,
-)
+from vpn_manager.keys import KeyGenerator
+from vpn_manager.utils import Color, Logger
+
 from .utils import ServerConfigData, ServerCreateConfigData
 
 

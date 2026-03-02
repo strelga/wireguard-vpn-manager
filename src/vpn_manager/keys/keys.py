@@ -5,7 +5,9 @@ WireGuard Key Generation Module
 
 from pathlib import Path
 
-from .utils import KeyGenerator, Logger
+from vpn_manager.utils import Logger
+
+from .utils import KeyGenerator
 
 
 class KeyManager:

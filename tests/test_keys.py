@@ -11,8 +11,8 @@ from vpn_manager.keys import KeyManager
 class TestKeyManager:
     """Test KeyManager class"""
 
-    @patch("vpn_manager.keys.KeyGenerator")
-    @patch("vpn_manager.keys.Logger")
+    @patch("vpn_manager.keys.keys.KeyGenerator")
+    @patch("vpn_manager.keys.keys.Logger")
     def test_generate_to_console_success(self, mock_logger, mock_key_generator):
         """Test successful key generation to console"""
         mock_key_generator.generate_keypair.return_value = ("private_key", "public_key")
@@ -24,8 +24,8 @@ class TestKeyManager:
         mock_key_generator.generate_keypair.assert_called_once()
         mock_logger.success.assert_called()
 
-    @patch("vpn_manager.keys.KeyGenerator")
-    @patch("vpn_manager.keys.Logger")
+    @patch("vpn_manager.keys.keys.KeyGenerator")
+    @patch("vpn_manager.keys.keys.Logger")
     def test_generate_to_directory_success(self, mock_logger, mock_key_generator, tmp_dir):
         """Test successful key generation to directory"""
         mock_key_generator.generate_keypair.return_value = ("private_key", "public_key")
@@ -50,8 +50,8 @@ class TestKeyManager:
             assert oct(private_stat.st_mode)[-3:] == "600"
             assert oct(public_stat.st_mode)[-3:] == "644"
 
-    @patch("vpn_manager.keys.KeyGenerator")
-    @patch("vpn_manager.keys.Logger")
+    @patch("vpn_manager.keys.keys.KeyGenerator")
+    @patch("vpn_manager.keys.keys.Logger")
     def test_generate_empty_keys(self, mock_logger, mock_key_generator):
         """Test key generation when keys are empty"""
         mock_key_generator.generate_keypair.return_value = ("", "")
@@ -62,8 +62,8 @@ class TestKeyManager:
         assert result is False
         mock_logger.error.assert_called_once()
 
-    @patch("vpn_manager.keys.KeyGenerator")
-    @patch("vpn_manager.keys.Logger")
+    @patch("vpn_manager.keys.keys.KeyGenerator")
+    @patch("vpn_manager.keys.keys.Logger")
     def test_generate_exception(self, mock_logger, mock_key_generator):
         """Test key generation when exception occurs"""
         mock_key_generator.generate_keypair.side_effect = Exception("Generation failed")
@@ -74,8 +74,8 @@ class TestKeyManager:
         assert result is False
         mock_logger.error.assert_called_once()
 
-    @patch("vpn_manager.keys.KeyGenerator")
-    @patch("vpn_manager.keys.Logger")
+    @patch("vpn_manager.keys.keys.KeyGenerator")
+    @patch("vpn_manager.keys.keys.Logger")
     def test_generate_creates_nested_directory(self, mock_logger, mock_key_generator, tmp_dir):
         """Test that nested directories are created"""
         mock_key_generator.generate_keypair.return_value = ("private_key", "public_key")
@@ -89,8 +89,8 @@ class TestKeyManager:
         assert (output_dir / "private.key").exists()
         assert (output_dir / "public.key").exists()
 
-    @patch("vpn_manager.keys.KeyGenerator")
-    @patch("vpn_manager.keys.Logger")
+    @patch("vpn_manager.keys.keys.KeyGenerator")
+    @patch("vpn_manager.keys.keys.Logger")
     def test_generate_overwrites_existing_files(self, mock_logger, mock_key_generator, tmp_dir):
         """Test that existing files are overwritten"""
         mock_key_generator.generate_keypair.return_value = ("new_private_key", "new_public_key")
