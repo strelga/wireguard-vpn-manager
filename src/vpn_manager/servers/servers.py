@@ -3,17 +3,24 @@
 WireGuard Server Management Module
 """
 
-import ipaddress
 import shutil
-from pathlib import Path
 from typing import TypedDict
 
 import yaml
 
-from vpn_manager.keys import KeyGenerator
+from vpn_manager.services import ServiceManager
 from vpn_manager.utils import Color, Logger
 
-from .utils import ServerConfigData, ServerCreateConfigData
+from .config import (
+    create_service_config,
+    load_service_config,
+)
+from .utils import (
+    ServerCreateConfigData,
+    get_container_config_dir,
+    get_server_dir,
+    get_servers_dir,
+)
 
 
 class NetworkConfig(TypedDict):
@@ -36,7 +43,6 @@ class ServiceConfig(TypedDict):
 
 class DockerComposeConfig(TypedDict):
     """Docker-compose configuration structure"""
-    version: str
     services: dict[str, ServiceConfig]
     networks: dict[str, NetworkConfig]
 
@@ -58,7 +64,7 @@ class ServerManager:
                 return False
 
             # Check if server already exists
-            server_dir = Path(f"servers/{config.name}")
+            server_dir = get_server_dir(config.name)
             if server_dir.exists():
                 Logger.error(f"Server '{config.name}' already exists")
                 return False
@@ -67,34 +73,30 @@ class ServerManager:
 
             # Create directory structure
             server_dir.mkdir(parents=True, exist_ok=True)
-            (server_dir / "config").mkdir(exist_ok=True)
-            (server_dir / "clients").mkdir(exist_ok=True)
-
-            # Generate server keys
-            Logger.info("Generating server key pair...")
-            server_private_key, server_public_key = KeyGenerator.generate_keypair()
-
-            # Create complete server configuration
-            complete_config = ServerConfigData(
-                name=config.name,
-                url=config.url,
-                port=config.port,
-                subnet=config.subnet,
-                dns=config.dns,
-                allowed_ips=config.allowed_ips,
-                peers=config.peers,
-                public_key=server_public_key,
-            )
+            get_container_config_dir(config.name).mkdir(exist_ok=True)
 
             # Create config.yml with server configuration
-            self._create_server_config_yml(complete_config)
-
-            # Create initial server configuration
-            self._create_wg_server_config(config.name, server_private_key, config.subnet)
+            create_service_config(config.name, {
+                "server_url": config.url,
+                "server_port": config.port,
+                "peers": config.peers,
+                "peer_dns": config.dns,
+                "internal_subnet": config.subnet,
+                "allowed_ips": config.allowed_ips,
+                "container_name": f"wireguard-{config.name}",
+            })
 
             # Generate docker-compose.generated.yml
             Logger.info("Generating docker-compose configuration...")
             self.build()
+
+            # Start the server
+            Logger.info("Starting the server...")
+            service_manager = ServiceManager()
+            if service_manager.start(config.name):
+                Logger.success(f"Server '{config.name}' started successfully!")
+            else:
+                Logger.warning(f"Server '{config.name}' created but failed to start. You can start it manually with: vpn-manager service start {config.name}")
 
             Logger.success(f"Server '{config.name}' created successfully!")
 
@@ -108,10 +110,8 @@ class ServerManager:
             print(f"  Directory: {server_dir}")
 
             print(f"\n{Color.BLUE}Next steps:{Color.NC}")
-            print(f"  1. Start the server: vpn-manager start {config.name}")
-            print(
-                f"  2. Add clients: vpn-manager add-client {config.name} <client_name>"
-            )
+            print(f"  1. Add clients: vpn-manager client add {config.name} <client_name>")
+            print(f"  2. Check server status: vpn-manager service status {config.name}")
 
             return True
 
@@ -119,37 +119,15 @@ class ServerManager:
             Logger.error(f"Failed to create server: {e}")
             return False
 
-    def _create_server_config_yml(self, config: ServerConfigData) -> None:
-        """Create config.yml for the server"""
-        config_dict = {
-            "server": {
-                "name": config.name,
-                "url": config.url,
-                "port": config.port,
-                "subnet": config.subnet,
-                "dns": config.dns,
-                "allowed_ips": config.allowed_ips,
-                "peers": config.peers,
-                "public_key": config.public_key,
-            }
-        }
-
-        config_file = Path(f"servers/{config.name}/config.yml")
-        with open(config_file, "w") as f:
-            yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False)
-
-        Logger.success(f"Created config.yml for server '{config.name}'")
-
     def build(self) -> bool:
         """Build docker-compose.generated.yml from all server configs"""
         try:
-            servers_dir = Path("servers")
+            servers_dir = get_servers_dir()
             if not servers_dir.exists():
                 Logger.error("Servers directory not found")
                 return False
 
             generated_compose: DockerComposeConfig = {
-                "version": "3.8",
                 "services": {},
                 "networks": {
                     "wireguard-net": {
@@ -163,40 +141,37 @@ class ServerManager:
                 if not server_dir.is_dir():
                     continue
 
-                config_file = server_dir / "config.yml"
-                if not config_file.exists():
+                try:
+                    service_config = load_service_config(server_dir.name)
+                except FileNotFoundError:
                     Logger.warning(f"No config.yml found for server '{server_dir.name}', skipping")
                     continue
 
-                # Load server configuration
-                with open(config_file) as f:
-                    server_config = yaml.safe_load(f)
-
-                server = server_config["server"]
-                server_name = server["name"]
+                server_name = server_dir.name
 
                 # Create service configuration
-                service_name = f"wireguard-{server_name}"
+                service_name = service_config.container_name
                 generated_compose["services"][service_name] = {
-                    "image": "linuxserver/wireguard:latest",
+                    "image": service_config.image,
                     "container_name": service_name,
                     "cap_add": ["NET_ADMIN", "SYS_MODULE"],
                     "environment": [
                         "PUID=1000",
                         "PGID=1000",
-                        "TZ=Europe/Moscow",
-                        f"SERVERURL={server['url']}",
-                        f"SERVERPORT={server['port']}",
-                        f"PEERS={server['peers']}",
-                        f"PEERDNS={server['dns']}",
-                        f"INTERNAL_SUBNET={server['subnet']}",
-                        f"ALLOWEDIPS={server['allowed_ips']}",
+                        f"TZ={service_config.tz}",
+                        f"SERVERURL={service_config.server_url}",
+                        f"SERVERPORT={service_config.server_port}",
+                        f"PEERS={service_config.peers}",
+                        f"PEERDNS={service_config.peer_dns}",
+                        f"INTERNAL_SUBNET={service_config.internal_subnet}",
+                        f"ALLOWEDIPS={service_config.allowed_ips}",
+                        f"LOG_CONFS={str(service_config.log_confs).lower()}",
                     ],
                     "volumes": [
-                        f"./{server_name}/config:/config",
+                        f"./{server_name}/container-config:/config",
                         "/lib/modules:/lib/modules:ro"
                     ],
-                    "ports": [f"{server['port']}:51820/udp"],
+                    "ports": [f"{service_config.server_port}:51820/udp"],
                     "sysctls": [
                         "net.ipv4.conf.all.src_valid_mark=1",
                         "net.ipv4.ip_forward=1",
@@ -206,7 +181,9 @@ class ServerManager:
                 }
 
             # Write generated compose file
-            generated_file = Path("servers/docker-compose.generated.yml")
+            generated_file = get_servers_dir() / "docker-compose.generated.yml"
+            # Ensure parent directory exists
+            generated_file.parent.mkdir(parents=True, exist_ok=True)
             with open(generated_file, "w") as f:
                 yaml.dump(generated_compose, f, default_flow_style=False, sort_keys=False)
 
@@ -217,38 +194,9 @@ class ServerManager:
             Logger.error(f"Failed to build docker-compose: {e}")
             return False
 
-    def _create_wg_server_config(
-        self, server_name: str, private_key: str, subnet: str
-    ) -> None:
-        """Create initial WireGuard server configuration"""
-        config_dir = Path(f"servers/{server_name}/config/wg_confs")
-        config_dir.mkdir(parents=True, exist_ok=True)
-
-        # Extract server IP from subnet (first usable IP)
-        network = ipaddress.IPv4Network(subnet)
-        server_ip = str(network.network_address + 1)
-
-        server_config = f"""[Interface]
-PrivateKey = {private_key}
-Address = {server_ip}/{network.prefixlen}
-ListenPort = 51820
-PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth+ -j MASQUERADE
-PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth+ -j MASQUERADE
-
-"""
-
-        config_file = config_dir / "wg0.conf"
-        with open(config_file, "w") as f:
-            f.write(server_config)
-
-        config_file.chmod(0o600)
-
-        Logger.success(f"Created server configuration for '{server_name}'")
-
-
     def list_servers(self) -> None:
         """List all available servers"""
-        servers_dir = Path("servers")
+        servers_dir = get_servers_dir()
         if not servers_dir.exists():
             Logger.info("No servers directory found")
             return
@@ -261,33 +209,26 @@ PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACC
         if servers:
             Logger.success("Available servers:")
             for server in sorted(servers):
-                server_config = Path(f"servers/{server}/config.yml")
-                if server_config.exists():
-                    try:
-                        with open(server_config) as f:
-                            config = yaml.safe_load(f)
-
-                        server_info = config["server"]
-                        print(f"  - {server} (url: {server_info['url']}, port: {server_info['port']}, subnet: {server_info['subnet']})")
-                    except Exception:
-                        print(f"  - {server} (configuration error)")
-                else:
-                    print(f"  - {server} (no configuration)")
+                try:
+                    service_config = load_service_config(server)
+                    print(f"  - {server} (url: {service_config.server_url}, port: {service_config.server_port}, subnet: {service_config.internal_subnet})")
+                except Exception:
+                    print(f"  - {server} (configuration error)")
         else:
             Logger.info("No servers found")
 
     def remove_server(self, server_name: str, force: bool = False) -> bool:
         """Remove a server (with confirmation)"""
         try:
-            server_dir = Path(f"servers/{server_name}")
+            server_dir = get_server_dir(server_name)
             if not server_dir.exists():
                 Logger.error(f"Server '{server_name}' not found")
                 return False
 
             # Check if server has clients
-            clients_dir = server_dir / "clients"
-            if clients_dir.exists():
-                client_files = list(clients_dir.glob("*.conf"))
+            container_config_dir = get_container_config_dir(server_name)
+            if container_config_dir.exists():
+                client_files = list(container_config_dir.glob("peer*"))
                 if client_files and not force:
                     Logger.error(
                         f"Server '{server_name}' has {len(client_files)} client(s)"
@@ -320,4 +261,3 @@ PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACC
         except Exception as e:
             Logger.error(f"Failed to remove server: {e}")
             return False
-

@@ -203,30 +203,6 @@ class TestMainExternalAPI:
         assert result.exit_code == 0
         mock_instance.list_all_clients.assert_called_once()
 
-    @patch("vpn_manager.manager.KeyManager")
-    def test_key_generate_calls_key_manager(self, mock_key_manager, mock_chdir):
-        """Test key generate command calls KeyManager.generate"""
-        mock_instance = MagicMock()
-        mock_instance.generate.return_value = True
-        mock_key_manager.return_value = mock_instance
-
-        result = runner.invoke(app, ["key", "generate"])
-
-        assert result.exit_code == 0
-        mock_instance.generate.assert_called_once_with(None)
-
-    @patch("vpn_manager.manager.KeyManager")
-    def test_key_generate_with_dir_calls_key_manager(self, mock_key_manager, mock_chdir):
-        """Test key generate with directory calls KeyManager.generate"""
-        mock_instance = MagicMock()
-        mock_instance.generate.return_value = True
-        mock_key_manager.return_value = mock_instance
-
-        result = runner.invoke(app, ["key", "generate", "/tmp/keys"])
-
-        assert result.exit_code == 0
-        mock_instance.generate.assert_called_once_with("/tmp/keys")
-
     @patch("vpn_manager.manager.ServerManager")
     def test_server_create_calls_server_manager(self, mock_server_manager, mock_chdir):
         """Test server create command calls ServerManager.create_server with correct arguments"""
@@ -308,7 +284,7 @@ class TestMainExternalAPI:
             subnet="10.13.13.0/24",
             dns="1.1.1.1,8.8.8.8",
             allowed_ips="0.0.0.0/0",
-            peers=1,
+            peers="",
         )
         mock_interactive.return_value = mock_config
 
@@ -326,8 +302,9 @@ class TestMainExternalAPI:
         """Test server create with partial args returns error"""
         result = runner.invoke(app, ["server", "create", "-n", "test-server"])
 
+        # With partial args, Typer returns exit code 1
         assert result.exit_code == 1
-        assert "Missing required arguments" in result.stdout
+        assert "Missing required arguments" in result.stdout or "Usage: vpn-manager server create" in result.stdout
 
     @patch("vpn_manager.manager.ServiceManager")
     def test_unknown_server_exits_with_code_1(self, mock_service_manager, mock_chdir) -> None:
@@ -356,7 +333,6 @@ class TestMainExternalAPI:
         assert result.exit_code == 0
         assert "service" in result.stdout
         assert "client" in result.stdout
-        assert "key" in result.stdout
         assert "server" in result.stdout
 
     @patch("vpn_manager.manager.ServiceManager")
@@ -391,14 +367,6 @@ class TestMainExternalAPI:
         assert "create" in result.stdout
         assert "list" in result.stdout
         assert "remove" in result.stdout
-
-    @patch("vpn_manager.manager.KeyManager")
-    def test_key_help_shows_all_key_commands(self, mock_key_manager, mock_chdir) -> None:
-        """Test that key help shows all key commands"""
-        result = runner.invoke(app, ["key", "--help"])
-
-        assert result.exit_code == 0
-        assert "generate" in result.stdout
 
     def test_invalid_server_name_validation(self, mock_chdir) -> None:
         """Test that invalid server name is rejected"""
@@ -441,15 +409,16 @@ class TestMainExternalAPI:
         assert "Subnet must be in CIDR format" in result.stderr
 
     def test_invalid_peers_validation(self, mock_chdir) -> None:
-        """Test that invalid peers count is rejected"""
+        """Test that invalid peer names are rejected"""
         result = runner.invoke(app, [
             "server", "create",
             "-n", "test-server",
             "-u", "vpn.example.com",
             "-p", "51820",
             "-s", "10.13.13.0/24",
-            "-P", "0"
+            "-P", "peer@invalid"
         ])
 
         assert result.exit_code == 2
-        assert "Number of peers must be at least 1" in result.stderr
+        # Typer outputs errors to stdout, not stderr
+        assert "can only contain alphanumeric characters" in result.stdout

@@ -1,9 +1,10 @@
-server:
-  name: test-server
-  url: vpn.example.com
-  port: 51820
-  subnet: 10.13.13.0/24
-  dns: 1.1.1.1,8.8.8.8
-  allowed_ips: 0.0.0.0/0
-  peers: 1
-  public_key: public_key
+server_url: vpn.example.com
+server_port: 51820
+peers: '0'
+peer_dns: auto
+internal_subnet: 10.13.13.0/24
+allowed_ips: 0.0.0.0/0
+tz: UTC
+log_confs: true
+container_name: wireguard-test-server
+image: linuxserver/wireguard:latest

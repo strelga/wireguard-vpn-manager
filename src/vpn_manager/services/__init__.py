@@ -1,6 +1,6 @@
 """Services module for WireGuard VPN management"""
 
-from .docker import DockerManager
+from .docker import DockerComposeManager, DockerManager
 from .services import ServiceManager
 
-__all__ = ["DockerManager", "ServiceManager"]
+__all__ = ["DockerComposeManager", "DockerManager", "ServiceManager"]

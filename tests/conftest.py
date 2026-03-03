@@ -14,6 +14,16 @@ def tmp_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
+@pytest.fixture(autouse=True)
+def mock_server_paths(tmp_dir):
+    """Mock get_servers_dir in all modules to return tmp_path / 'servers' for tests"""
+    servers_dir = tmp_dir / "servers"
+    with patch("vpn_manager.servers.utils.get_servers_dir", return_value=servers_dir), \
+         patch("vpn_manager.servers.get_servers_dir", return_value=servers_dir), \
+         patch("vpn_manager.servers.servers.get_servers_dir", return_value=servers_dir):
+        yield
+
+
 @pytest.fixture
 def mock_subprocess():
     """Mock subprocess module"""
@@ -50,8 +60,7 @@ def sample_client_config():
 @pytest.fixture
 def sample_docker_compose():
     """Sample docker-compose.yml content"""
-    return """version: '3.8'
-services:
+    return """services:
   wireguard-test-server:
     image: linuxserver/wireguard:latest
     container_name: wireguard-test-server

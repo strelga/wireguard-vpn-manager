@@ -3,10 +3,24 @@
 WireGuard Client Management Module
 """
 
-from vpn_manager.keys import KeyGenerator
-from vpn_manager.servers.utils import ServerConfig, validate_server_name
-from vpn_manager.services import DockerManager, ServiceManager
-from vpn_manager.utils import Color, Logger, QRCodeGenerator
+import os
+import shutil
+import sys
+import time
+from pathlib import Path
+
+from vpn_manager.servers import (
+    ServerManager,
+    add_peer,
+    get_container_config_dir,
+    get_container_name,
+    list_peers,
+    load_service_config,
+    remove_peer,
+    validate_server_name,
+)
+from vpn_manager.services import DockerComposeManager, ServiceManager
+from vpn_manager.utils import Color, Logger
 
 from .utils import validate_client_name
 
@@ -14,107 +28,104 @@ from .utils import validate_client_name
 class ClientManager:
     """WireGuard client management utility"""
 
-    def _get_server_public_key(self, wg_config: ServerConfig) -> str:
-        """Extract server public key from existing configuration"""
-        if not wg_config.wg_config_file.exists():
-            raise FileNotFoundError(
-                f"Server configuration not found: {wg_config.wg_config_file}"
-            )
+    _docker_compose_manager: DockerComposeManager
 
-        with open(wg_config.wg_config_file) as f:
-            content = f.read()
+    def __init__(self):
+        """Initialize ClientManager"""
+        self._docker_compose_manager = DockerComposeManager()
 
-        # Find PrivateKey in [Interface] section
-        lines = content.split("\n")
-        in_interface = False
-
-        for line in lines:
-            stripped_line = line.strip()
-            if stripped_line == "[Interface]":
-                in_interface = True
-            elif stripped_line.startswith("[") and stripped_line != "[Interface]":
-                in_interface = False
-            elif in_interface and stripped_line.startswith("PrivateKey"):
-                private_key = stripped_line.split("=")[1].strip()
-                # Generate public key from private key
-                try:
-                    return KeyGenerator.generate_public_key(private_key)
-                except Exception as e:
-                    raise RuntimeError(f"Failed to generate server public key: {e}") from e
-
-        raise ValueError("Server private key not found in configuration")
-
-    def _check_client_exists(
-        self, wg_config: ServerConfig, client_name: str
-    ) -> bool:
+    def _check_client_exists(self, server_name: str, client_name: str) -> bool:
         """Check if client already exists"""
-        client_config_file = wg_config.clients_dir / f"{client_name}.conf"
-        if client_config_file.exists():
-            return True
+        peers = list_peers(server_name)
+        return client_name in peers
 
-        # Also check in server config
-        if wg_config.wg_config_file.exists():
-            with open(wg_config.wg_config_file) as f:
+    def _get_client_config_file(self, server_name: str, client_name: str) -> Path:
+        """Get the path to a client's configuration file"""
+        container_config_dir = get_container_config_dir(server_name)
+        # WireGuard creates a directory peer_<client_name>/ with peer_<client_name>.conf inside
+        return container_config_dir / f"peer_{client_name}" / f"peer_{client_name}.conf"
+
+    def _get_client_qr_file(self, server_name: str, client_name: str) -> Path:
+        """Get the path to a client's QR code file"""
+        container_config_dir = get_container_config_dir(server_name)
+        # WireGuard creates a directory peer_<client_name>/ with peer_<client_name>.png inside
+        return container_config_dir / f"peer_{client_name}" / f"peer_{client_name}.png"
+
+    def _get_wg0_conf_file(self, server_name: str) -> Path:
+        """Get the path to the wg0.conf file"""
+        container_config_dir = get_container_config_dir(server_name)
+        return container_config_dir / "wg_confs" / "wg0.conf"
+
+    def _check_client_in_wg0_conf(self, server_name: str, client_name: str) -> bool:
+        """Check if client appears in wg0.conf file"""
+        wg0_conf_file = self._get_wg0_conf_file(server_name)
+        if not wg0_conf_file.exists():
+            return False
+
+        try:
+            # Force file system sync to ensure we read the latest content
+            os.sync()
+
+            with open(wg0_conf_file) as f:
                 content = f.read()
-            if f"# Client: {client_name}" in content:
+                # Check if client's peer section exists in wg0.conf
+                # The peer section format can be:
+                # - [Peer] followed by # <client_name>
+                # - peer_<client_name> in the content
+                # - <client_name> in the content (more flexible check)
+                return (
+                    f"# {client_name}" in content or
+                    f"peer_{client_name}" in content or
+                    client_name in content
+                )
+        except Exception:
+            return False
+
+    def _wait_for_client_config(self, server_name: str, client_name: str, max_attempts: int = 30) -> bool:
+        """Wait for container to generate client configuration file
+
+        Process:
+        1. First wait for client to appear in wg0.conf
+        2. Then wait for client's config directory to be created
+        """
+        # Step 1: Wait for client to appear in wg0.conf
+        for attempt in range(1, max_attempts + 1):
+            if self._check_client_in_wg0_conf(server_name, client_name):
+                sys.stdout.write(f"\rClient '{client_name}' appeared in wg0.conf (attempt {attempt}/{max_attempts})\n")
+                sys.stdout.flush()
+                break
+
+            # Update the same line with attempt count
+            sys.stdout.write(f"\rWaiting for client to appear in wg0.conf... ({attempt}/{max_attempts})")
+            sys.stdout.flush()
+            time.sleep(2)
+        else:
+            # Clear the line
+            sys.stdout.write("\r" + " " * 80 + "\r")
+            sys.stdout.flush()
+            return False
+
+        # Step 2: Wait for client's config file to be created
+        client_config_file = self._get_client_config_file(server_name, client_name)
+
+        for attempt in range(1, max_attempts + 1):
+            # Force file system sync to ensure we see the latest state
+            os.sync()
+
+            if client_config_file.exists():
+                sys.stdout.write(f"\rClient config file created (attempt {attempt}/{max_attempts})\n")
+                sys.stdout.flush()
                 return True
 
+            # Update the same line with attempt count
+            sys.stdout.write(f"\rWaiting for client config file... ({attempt}/{max_attempts})")
+            sys.stdout.flush()
+            time.sleep(2)
+
+        # Clear the line
+        sys.stdout.write("\r" + " " * 80 + "\r")
+        sys.stdout.flush()
         return False
-
-    def _add_peer_to_server_config(
-        self,
-        wg_config: ServerConfig,
-        client_name: str,
-        client_public_key: str,
-        client_ip: str,
-    ) -> None:
-        """Add peer configuration to server config file"""
-        peer_config = f"""
-# Client: {client_name}
-[Peer]
-PublicKey = {client_public_key}
-AllowedIPs = {client_ip}/32
-"""
-
-        # Append to server config
-        with open(wg_config.wg_config_file, "a") as f:
-            f.write(peer_config)
-
-        Logger.success(f"Added peer {client_name} to server configuration")
-
-    def _create_client_config(
-        self,
-        wg_config: ServerConfig,
-        client_name: str,
-        client_private_key: str,
-        client_ip: str,
-        server_public_key: str,
-    ) -> str:
-        """Create client configuration file and return its content"""
-        server_info = wg_config.get_server_info()
-
-        client_config = f"""[Interface]
-PrivateKey = {client_private_key}
-Address = {client_ip}/32
-DNS = {server_info.dns}
-
-[Peer]
-PublicKey = {server_public_key}
-Endpoint = {server_info.url}:{server_info.port}
-AllowedIPs = {server_info.allowed_ips}
-PersistentKeepalive = 25
-"""
-
-        # Save client config file
-        client_config_file = wg_config.clients_dir / f"{client_name}.conf"
-        with open(client_config_file, "w") as f:
-            f.write(client_config)
-
-        client_config_file.chmod(0o600)  # Secure permissions
-
-        Logger.success(f"Created client configuration: {client_config_file}")
-
-        return client_config
 
     def add(self, server_name: str, client_name: str) -> bool:
         """Add a new client to WireGuard server"""
@@ -126,67 +137,68 @@ PersistentKeepalive = 25
             if not validate_client_name(client_name):
                 return False
 
-            # Initialize configuration
-            wg_config = ServerConfig(server_name)
-
             # Check if client already exists
-            if self._check_client_exists(wg_config, client_name):
+            if self._check_client_exists(server_name, client_name):
                 Logger.error(f"Client '{client_name}' already exists")
                 return False
 
             # Get server info
-            server_info = wg_config.get_server_info()
-            Logger.info(f"Server subnet: {server_info.subnet}")
+            service_config = load_service_config(server_name)
+            Logger.info(f"Server subnet: {service_config.internal_subnet}")
             Logger.info(
-                f"Server endpoint: {server_info.url}:{server_info.port}"
+                f"Server endpoint: {service_config.server_url}:{service_config.server_port}"
             )
 
-            # Generate client keys
-            Logger.info("Generating client key pair...")
-            client_private_key, client_public_key = KeyGenerator.generate_keypair()
-
-            # Find next available IP
-            Logger.info("Finding next available IP address...")
-            client_ip = wg_config.get_next_client_ip()
-            Logger.info(f"Assigned IP: {client_ip}")
-
-            # Get server public key
-            Logger.info("Extracting server public key...")
-            server_public_key = self._get_server_public_key(wg_config)
-
-            # Add peer to server config
+            # Add peer to config.yml
             Logger.info("Adding peer to server configuration...")
-            self._add_peer_to_server_config(
-                wg_config, client_name, client_public_key, client_ip
-            )
+            add_peer(server_name, client_name)
 
-            # Create client config
-            Logger.info("Creating client configuration...")
-            client_config_content = self._create_client_config(
-                wg_config, client_name, client_private_key, client_ip, server_public_key
-            )
+            # Regenerate docker-compose to update container configuration
+            Logger.info("Regenerating docker-compose configuration...")
+            server_manager = ServerManager()
+            server_manager.build()
 
-            # Restart container
+            # Restart container to apply changes
             Logger.info("Restarting container...")
-            container_name = server_info.container_name
-            if DockerManager.restart_container(container_name):
+            container_name = get_container_name(server_name)
+            if self._docker_compose_manager.restart_container(container_name):
                 Logger.success(f"Container '{container_name}' restarted successfully")
             else:
                 Logger.warning(
                     "Failed to restart container - you may need to restart manually"
                 )
 
+            # Wait for container to generate client configuration
+            if not self._wait_for_client_config(server_name, client_name):
+                Logger.warning(
+                    f"Client configuration file not found: {self._get_client_config_file(server_name, client_name)}"
+                )
+                Logger.warning(
+                    "The container may need more time to generate the configuration"
+                )
+                Logger.success(f"Client '{client_name}' added successfully!")
+                return True
+
+            # Read client configuration
+            client_config_file = self._get_client_config_file(server_name, client_name)
+            with open(client_config_file) as f:
+                client_config_content = f.read()
+
             # Display results
             Logger.success(f"Client '{client_name}' added successfully!")
 
             print(f"\n{Color.BLUE}Client Configuration:{Color.NC}")
             print(f"  Name: {client_name}")
-            print(f"  IP: {client_ip}")
-            print(f"  Config file: {wg_config.clients_dir}/{client_name}.conf")
+            print(f"  Config file: {client_config_file}")
 
-            # Generate QR code
+            # Display QR code information
+            client_qr_file = self._get_client_qr_file(server_name, client_name)
             print(f"\n{Color.BLUE}QR Code for mobile devices:{Color.NC}")
-            QRCodeGenerator.generate_qr(client_config_content)
+            if client_qr_file.exists():
+                print(f"  QR code file: {client_qr_file}")
+                print("  Scan this QR code with your WireGuard mobile app")
+            else:
+                print(f"  QR code file not found: {client_qr_file}")
 
             print(f"\n{Color.BLUE}Configuration content:{Color.NC}")
             print(client_config_content)
@@ -197,79 +209,21 @@ PersistentKeepalive = 25
             Logger.error(f"Failed to add client: {e}")
             return False
 
-    def _remove_peer_from_server_config(
-        self, wg_config: ServerConfig, client_name: str
-    ) -> bool:
-        """Remove peer configuration from server config file"""
-        if not wg_config.wg_config_file.exists():
-            Logger.warning(
-                f"Server configuration file not found: {wg_config.wg_config_file}"
-            )
-            return False
-
-        with open(wg_config.wg_config_file) as f:
-            content = f.read()
-
-        # Find and remove the client's peer section
-        lines = content.split("\n")
-        new_lines = []
-        skip_section = False
-        client_found = False
-
-        i = 0
-        while i < len(lines):
-            line = lines[i].strip()
-
-            # Check for client comment
-            if line == f"# Client: {client_name}":
-                client_found = True
-                skip_section = True
-                # Skip this line and the following [Peer] section
-                i += 1
-                continue
-
-            # If we're in a section to skip
-            if skip_section:
-                # Skip until we find the next section or end of file
-                if line.startswith("[") and line != "[Peer]":
-                    # Found next section, stop skipping
-                    skip_section = False
-                    new_lines.append(lines[i])
-                elif line.startswith("# Client:") or (i == len(lines) - 1):
-                    # Found another client or end of file, stop skipping
-                    skip_section = False
-                    if line.startswith("# Client:"):
-                        new_lines.append(lines[i])
-                # Otherwise, skip this line
-            else:
-                new_lines.append(lines[i])
-
-            i += 1
-
-        if not client_found:
-            Logger.warning(f"Client '{client_name}' not found in server configuration")
-            return False
-
-        # Write updated configuration
-        with open(wg_config.wg_config_file, "w") as f:
-            f.write("\n".join(new_lines))
-
-        Logger.success(f"Removed peer {client_name} from server configuration")
-        return True
-
-    def _remove_client_files(
-        self, wg_config: ServerConfig, client_name: str
-    ) -> bool:
+    def _remove_client_files(self, server_name: str, client_name: str) -> bool:
         """Remove client configuration files"""
-        client_config_file = wg_config.clients_dir / f"{client_name}.conf"
+        container_config_dir = get_container_config_dir(server_name)
+        client_dir = container_config_dir / f"peer_{client_name}"
 
-        if client_config_file.exists():
-            client_config_file.unlink()
-            Logger.success(f"Removed client configuration file: {client_config_file}")
-            return True
+        removed = False
+
+        if client_dir.exists() and client_dir.is_dir():
+            shutil.rmtree(client_dir)
+            Logger.success(f"Removed client directory: {client_dir}")
+            removed = True
         else:
-            Logger.warning(f"Client configuration file not found: {client_config_file}")
-            return False
+            Logger.warning(f"Client directory not found for '{client_name}'")
+
+        return removed
 
     def _validate_remove_inputs(self, server_name: str, client_name: str) -> bool:
         """Validate inputs for remove operation"""
@@ -288,26 +242,22 @@ PersistentKeepalive = 25
         else:
             Logger.info("No clients found")
 
-    def _perform_removal(self, wg_config: ServerConfig, client_name: str) -> bool:
+    def _perform_removal(self, server_name: str, client_name: str) -> bool:
         """Perform the actual removal of client data"""
-        # Remove peer from server config
+        # Remove peer from config.yml
         Logger.info("Removing peer from server configuration...")
-        server_config_removed = self._remove_peer_from_server_config(wg_config, client_name)
+        remove_peer(server_name, client_name)
 
         # Remove client files
         Logger.info("Removing client configuration files...")
-        client_files_removed = self._remove_client_files(wg_config, client_name)
+        client_files_removed = self._remove_client_files(server_name, client_name)
 
-        if not server_config_removed and not client_files_removed:
-            Logger.error("No client data was found to remove")
-            return False
-
-        return True
+        return client_files_removed
 
     def _restart_after_removal(self, container_name: str) -> None:
         """Restart container after client removal"""
         Logger.info("Restarting container...")
-        if DockerManager.restart_container(container_name):
+        if self._docker_compose_manager.restart_container(container_name):
             Logger.success(f"Container '{container_name}' restarted successfully")
         else:
             Logger.warning(
@@ -333,24 +283,26 @@ PersistentKeepalive = 25
             if not self._validate_remove_inputs(server_name, client_name):
                 return False
 
-            # Initialize configuration
-            wg_config = ServerConfig(server_name)
-
             # Check if client exists
-            if not self._check_client_exists(wg_config, client_name):
+            if not self._check_client_exists(server_name, client_name):
                 Logger.error(f"Client '{client_name}' not found")
                 self._show_available_clients(server_name)
                 return False
 
             # Get server info
-            server_info = wg_config.get_server_info()
+            service_config = load_service_config(server_name)
 
             # Perform removal
-            if not self._perform_removal(wg_config, client_name):
+            if not self._perform_removal(server_name, client_name):
                 return False
 
+            # Regenerate docker-compose to update container configuration
+            Logger.info("Regenerating docker-compose configuration...")
+            server_manager = ServerManager()
+            server_manager.build()
+
             # Restart container
-            self._restart_after_removal(server_info.container_name)
+            self._restart_after_removal(service_config.container_name)
 
             # Display results
             Logger.success(f"Client '{client_name}' removed successfully!")
@@ -367,38 +319,17 @@ PersistentKeepalive = 25
         if not validate_server_name(server_name):
             return []
 
-        wg_config = ServerConfig(server_name)
-        clients = []
-
-        # From client config files
-        if wg_config.clients_dir.exists():
-            for config_file in wg_config.clients_dir.glob("*.conf"):
-                clients.append(config_file.stem)
-
-        # From server config
-        if wg_config.wg_config_file.exists():
-            with open(wg_config.wg_config_file) as f:
-                content = f.read()
-
-            # Find all client comments
-            for line in content.split("\n"):
-                stripped_line = line.strip()
-                if stripped_line.startswith("# Client: "):
-                    client_name = stripped_line.replace("# Client: ", "")
-                    if client_name not in clients:
-                        clients.append(client_name)
-
-        clients = sorted(clients)
+        peers = list_peers(server_name)
 
         if show_output:
-            if clients:
+            if peers:
                 Logger.success(f"Clients on server '{server_name}':")
-                for client in clients:
+                for client in peers:
                     print(f"  - {client}")
             else:
                 Logger.info(f"No clients found on server '{server_name}'")
 
-        return clients
+        return peers
 
     def list_all_clients(self) -> None:
         """List clients for all servers"""

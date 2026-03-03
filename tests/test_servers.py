@@ -2,12 +2,12 @@
 Tests for servers.py module
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from vpn_manager.servers.servers import (
-    ServerConfigData,
+from vpn_manager.servers import (
     ServerCreateConfigData,
     ServerManager,
+    StoredServerConfigData,
 )
 
 
@@ -26,9 +26,9 @@ class TestServerCreateConfig:
         assert config.url == "vpn.example.com"
         assert config.port == 51820
         assert config.subnet == "10.13.13.0/24"
-        assert config.dns == "1.1.1.1,8.8.8.8"
+        assert config.dns == "auto"
         assert config.allowed_ips == "0.0.0.0/0"
-        assert config.peers == 1
+        assert config.peers == "0"
 
     def test_server_create_config_custom(self):
         """Test ServerCreateConfig with custom values"""
@@ -39,43 +39,49 @@ class TestServerCreateConfig:
             subnet="10.14.14.0/24",
             dns="8.8.8.8",
             allowed_ips="192.168.1.0/24",
-            peers=5,
+            peers="peer1,peer2",
         )
         assert config.dns == "8.8.8.8"
         assert config.allowed_ips == "192.168.1.0/24"
-        assert config.peers == 5
+        assert config.peers == "peer1,peer2"
 
 
-class TestServerConfig:
-    """Test ServerConfig dataclass"""
+class TestServiceConfig:
+    """Test ServiceConfig dataclass"""
 
-    def test_server_config(self):
-        """Test ServerConfig with public key"""
-        config = ServerConfigData(
-            name="test-server",
-            url="vpn.example.com",
-            port=51820,
-            subnet="10.13.13.0/24",
-            public_key="test_public_key",
-        )
-        assert config.public_key == "test_public_key"
+    def test_service_config(self):
+        """Test ServiceConfig with default values"""
+        config = StoredServerConfigData()
+        assert config.server_url == "auto"
+        assert config.server_port == 51820
+        assert config.peers == "0"
+        assert config.peer_dns == "auto"
+        assert config.internal_subnet == "10.13.13.0"
+        assert config.allowed_ips == "0.0.0.0/0"
+        assert config.tz == "UTC"
+        assert config.log_confs is True
+        assert config.container_name == "wireguard"
+        assert config.image == "linuxserver/wireguard:latest"
 
 
 class TestServerManager:
     """Test ServerManager class"""
 
-    @patch("vpn_manager.servers.servers.KeyGenerator")
+    @patch("vpn_manager.servers.servers.ServiceManager")
     @patch("vpn_manager.servers.servers.Logger")
-    def test_create_server_success(self, mock_logger, mock_key_gen, tmp_dir, snapshot):
+    def test_create_server_success(self, mock_logger, mock_service_manager_class, tmp_dir, snapshot):
         """Test successful server creation"""
-        mock_key_gen.generate_keypair.return_value = ("private_key", "public_key")
-
         config = ServerCreateConfigData(
             name="test-server",
             url="vpn.example.com",
             port=51820,
             subnet="10.13.13.0/24",
         )
+
+        # Setup ServiceManager mock
+        mock_service_manager = MagicMock()
+        mock_service_manager.start.return_value = True
+        mock_service_manager_class.return_value = mock_service_manager
 
         manager = ServerManager()
         result = manager.create_server(config)
@@ -83,25 +89,17 @@ class TestServerManager:
         assert result is True
         server_dir = tmp_dir / "servers" / "test-server"
         assert server_dir.exists()
-        assert (server_dir / "config").exists()
-        assert (server_dir / "clients").exists()
+        assert (server_dir / "container-config").exists()
 
         # Check config.yml content using snapshot
         config_file = server_dir / "config.yml"
         assert config_file.exists()
         snapshot.assert_match(config_file.read_text(), "config.yml")
 
-        # Check wg0.conf content using snapshot
-        wg_config_file = server_dir / "config" / "wg_confs" / "wg0.conf"
-        assert wg_config_file.exists()
-        snapshot.assert_match(wg_config_file.read_text(), "wg0.conf")
-
-    @patch("vpn_manager.servers.servers.KeyGenerator")
+    @patch("vpn_manager.servers.servers.ServiceManager")
     @patch("vpn_manager.servers.servers.Logger")
-    def test_create_server_custom_config(self, mock_logger, mock_key_gen, tmp_dir, snapshot):
+    def test_create_server_custom_config(self, mock_logger, mock_service_manager_class, tmp_dir, snapshot):
         """Test server creation with custom configuration"""
-        mock_key_gen.generate_keypair.return_value = ("private_key", "public_key")
-
         config = ServerCreateConfigData(
             name="test-server",
             url="vpn.example.com",
@@ -109,8 +107,13 @@ class TestServerManager:
             subnet="10.14.14.0/24",
             dns="8.8.8.8",
             allowed_ips="192.168.1.0/24",
-            peers=5,
+            peers="peer1,peer2",
         )
+
+        # Setup ServiceManager mock
+        mock_service_manager = MagicMock()
+        mock_service_manager.start.return_value = True
+        mock_service_manager_class.return_value = mock_service_manager
 
         manager = ServerManager()
         result = manager.create_server(config)
@@ -121,10 +124,6 @@ class TestServerManager:
         # Check config.yml content using snapshot
         config_file = server_dir / "config.yml"
         snapshot.assert_match(config_file.read_text(), "config_custom.yml")
-
-        # Check wg0.conf content using snapshot
-        wg_config_file = server_dir / "config" / "wg_confs" / "wg0.conf"
-        snapshot.assert_match(wg_config_file.read_text(), "wg0_custom.conf")
 
     @patch("vpn_manager.servers.servers.Logger")
     def test_create_server_invalid_name(self, mock_logger):
@@ -161,88 +160,43 @@ class TestServerManager:
         assert result is False
         mock_logger.error.assert_called_once()
 
-    @patch("vpn_manager.servers.servers.KeyGenerator")
-    @patch("vpn_manager.servers.servers.Logger")
-    def test_create_server_exception(self, mock_logger, mock_key_gen):
-        """Test server creation when exception occurs"""
-        mock_key_gen.generate_keypair.side_effect = Exception("Key generation failed")
-
-        config = ServerCreateConfigData(
-            name="test-server",
-            url="vpn.example.com",
-            port=51820,
-            subnet="10.13.13.0/24",
-        )
-
-        manager = ServerManager()
-        result = manager.create_server(config)
-
-        assert result is False
-        mock_logger.error.assert_called_once()
-
-    @patch("vpn_manager.servers.servers.yaml")
-    @patch("vpn_manager.servers.servers.Logger")
-    def test_create_server_config_yml(self, mock_logger, mock_yaml, tmp_dir, snapshot):
-        """Test _create_server_config_yml"""
-        # Create server directory first
-        server_dir = tmp_dir / "servers" / "test-server"
-        server_dir.mkdir(parents=True)
-
-        config = ServerConfigData(
-            name="test-server",
-            url="vpn.example.com",
-            port=51820,
-            subnet="10.13.13.0/24",
-            dns="1.1.1.1",
-            allowed_ips="0.0.0.0/0",
-            peers=1,
-            public_key="test_public_key",
-        )
-
-        manager = ServerManager()
-        manager._create_server_config_yml(config)
-
-        # Check file was created with correct content using snapshot
-        config_file = tmp_dir / "servers" / "test-server" / "config.yml"
-        assert config_file.exists()
-        snapshot.assert_match(config_file.read_text(), "server_config_yml.yml")
-
     @patch("vpn_manager.servers.servers.yaml")
     @patch("vpn_manager.servers.servers.Logger")
     def test_build_success(self, mock_logger, mock_yaml, tmp_dir, snapshot):
         """Test successful build of docker-compose"""
         servers_dir = tmp_dir / "servers"
-        servers_dir.mkdir()
+        servers_dir.mkdir(exist_ok=True)
 
         server_dir = servers_dir / "test-server"
         server_dir.mkdir()
 
         config_file = server_dir / "config.yml"
         config_file.write_text(
-            """server:
-  name: test-server
-  url: vpn.example.com
-  port: 51820
-  subnet: 10.13.13.0/24
-  dns: 1.1.1.1,8.8.8.8
-  allowed_ips: 0.0.0.0/0
-  peers: 1
-  public_key: test_public_key
+            """server_url: vpn.example.com
+server_port: 51820
+peers: ""
+peer_dns: auto
+internal_subnet: 10.13.13.0
+allowed_ips: 0.0.0.0/0
+tz: UTC
+log_confs: true
+container_name: wireguard-test-server
+image: linuxserver/wireguard:latest
 """
         )
 
-        mock_yaml.safe_load.return_value = {
-            "server": {
-                "name": "test-server",
-                "url": "vpn.example.com",
-                "port": 51820,
-                "subnet": "10.13.13.0/24",
-                "dns": "1.1.1.1,8.8.8.8",
-                "allowed_ips": "0.0.0.0/0",
-                "peers": 1,
-                "public_key": "test_public_key",
-            }
-        }
+        mock_yaml.safe_load.return_value = StoredServerConfigData(
+            server_url="vpn.example.com",
+            server_port=51820,
+            peers="",
+            peer_dns="auto",
+            internal_subnet="10.13.13.0",
+            allowed_ips="0.0.0.0/0",
+            tz="UTC",
+            log_confs=True,
+            container_name="wireguard-test-server",
+            image="linuxserver/wireguard:latest",
+        )
 
         manager = ServerManager()
         result = manager.build()
@@ -260,22 +214,23 @@ class TestServerManager:
     def test_build_multiple_servers(self, mock_logger, mock_yaml, tmp_dir, snapshot):
         """Test build with multiple servers"""
         servers_dir = tmp_dir / "servers"
-        servers_dir.mkdir()
+        servers_dir.mkdir(exist_ok=True)
 
         # Create first server
         server1_dir = servers_dir / "server1"
         server1_dir.mkdir()
         config1 = server1_dir / "config.yml"
         config1.write_text(
-            """server:
-  name: server1
-  url: vpn1.example.com
-  port: 51820
-  subnet: 10.13.13.0/24
-  dns: 1.1.1.1
-  allowed_ips: 0.0.0.0/0
-  peers: 1
-  public_key: key1
+            """server_url: vpn1.example.com
+server_port: 51820
+peers: ""
+peer_dns: auto
+internal_subnet: 10.13.13.0
+allowed_ips: 0.0.0.0/0
+tz: UTC
+log_confs: true
+container_name: wireguard-server1
+image: linuxserver/wireguard:latest
 """
         )
 
@@ -284,43 +239,44 @@ class TestServerManager:
         server2_dir.mkdir()
         config2 = server2_dir / "config.yml"
         config2.write_text(
-            """server:
-  name: server2
-  url: vpn2.example.com
-  port: 51821
-  subnet: 10.14.14.0/24
-  dns: 8.8.8.8
-  allowed_ips: 192.168.1.0/24
-  peers: 2
-  public_key: key2
+            """server_url: vpn2.example.com
+server_port: 51821
+peers: ""
+peer_dns: auto
+internal_subnet: 10.14.14.0
+allowed_ips: 192.168.1.0/24
+tz: UTC
+log_confs: true
+container_name: wireguard-server2
+image: linuxserver/wireguard:latest
 """
         )
 
         mock_yaml.safe_load.side_effect = [
-            {
-                "server": {
-                    "name": "server1",
-                    "url": "vpn1.example.com",
-                    "port": 51820,
-                    "subnet": "10.13.13.0/24",
-                    "dns": "1.1.1.1",
-                    "allowed_ips": "0.0.0.0/0",
-                    "peers": 1,
-                    "public_key": "key1",
-                }
-            },
-            {
-                "server": {
-                    "name": "server2",
-                    "url": "vpn2.example.com",
-                    "port": 51821,
-                    "subnet": "10.14.14.0/24",
-                    "dns": "8.8.8.8",
-                    "allowed_ips": "192.168.1.0/24",
-                    "peers": 2,
-                    "public_key": "key2",
-                }
-            },
+            StoredServerConfigData(
+                server_url="vpn1.example.com",
+                server_port=51820,
+                peers="",
+                peer_dns="auto",
+                internal_subnet="10.13.13.0",
+                allowed_ips="0.0.0.0/0",
+                tz="UTC",
+                log_confs=True,
+                container_name="wireguard-server1",
+                image="linuxserver/wireguard:latest",
+            ),
+            StoredServerConfigData(
+                server_url="vpn2.example.com",
+                server_port=51821,
+                peers="",
+                peer_dns="auto",
+                internal_subnet="10.14.14.0",
+                allowed_ips="192.168.1.0/24",
+                tz="UTC",
+                log_confs=True,
+                container_name="wireguard-server2",
+                image="linuxserver/wireguard:latest",
+            ),
         ]
 
         manager = ServerManager()
@@ -347,7 +303,7 @@ class TestServerManager:
     def test_build_no_config_yml(self, mock_logger, mock_yaml, tmp_dir):
         """Test build when server has no config.yml"""
         servers_dir = tmp_dir / "servers"
-        servers_dir.mkdir()
+        servers_dir.mkdir(exist_ok=True)
 
         server_dir = servers_dir / "test-server"
         server_dir.mkdir()
@@ -363,7 +319,7 @@ class TestServerManager:
     def test_build_exception(self, mock_logger, mock_yaml, tmp_dir):
         """Test build when exception occurs"""
         servers_dir = tmp_dir / "servers"
-        servers_dir.mkdir()
+        servers_dir.mkdir(exist_ok=True)
 
         # Create a server directory with config.yml
         server_dir = servers_dir / "test-server"
@@ -379,52 +335,27 @@ class TestServerManager:
         assert result is False
         mock_logger.error.assert_called()
 
-    @patch("vpn_manager.servers.servers.Logger")
-    def test_create_wg_server_config(self, mock_logger, tmp_dir, snapshot):
-        """Test _create_wg_server_config"""
-        server_dir = tmp_dir / "servers" / "test-server"
-        server_dir.mkdir(parents=True)
-
-        manager = ServerManager()
-        manager._create_wg_server_config("test-server", "private_key", "10.13.13.0/24")
-
-        config_dir = server_dir / "config" / "wg_confs"
-        assert config_dir.exists()
-        config_file = config_dir / "wg0.conf"
-        assert config_file.exists()
-
-        # Check content using snapshot
-        snapshot.assert_match(config_file.read_text(), "wg_server_config.conf")
-        mock_logger.success.assert_called_once()
-
-    @patch("vpn_manager.servers.servers.Logger")
-    def test_create_wg_server_config_different_subnet(self, mock_logger, tmp_dir, snapshot):
-        """Test _create_wg_server_config with different subnet"""
-        server_dir = tmp_dir / "servers" / "test-server"
-        server_dir.mkdir(parents=True)
-
-        manager = ServerManager()
-        manager._create_wg_server_config("test-server", "private_key", "192.168.100.0/24")
-
-        config_file = server_dir / "config" / "wg_confs" / "wg0.conf"
-        snapshot.assert_match(config_file.read_text(), "wg_server_config_custom_subnet.conf")
-
     @patch("vpn_manager.servers.servers.yaml")
     @patch("vpn_manager.servers.servers.Logger")
     def test_list_servers_success(self, mock_logger, mock_yaml, tmp_dir):
         """Test successful server listing"""
         servers_dir = tmp_dir / "servers"
-        servers_dir.mkdir()
+        servers_dir.mkdir(exist_ok=True)
 
         server1_dir = servers_dir / "server1"
         server1_dir.mkdir()
         config1 = server1_dir / "config.yml"
         config1.write_text(
-            """server:
-  name: server1
-  url: vpn1.example.com
-  port: 51820
-  subnet: 10.13.13.0/24
+            """server_url: vpn1.example.com
+server_port: 51820
+peers: ""
+peer_dns: auto
+internal_subnet: 10.13.13.0
+allowed_ips: 0.0.0.0/0
+tz: UTC
+log_confs: true
+container_name: wireguard-server1
+image: linuxserver/wireguard:latest
 """
         )
 
@@ -432,31 +363,44 @@ class TestServerManager:
         server2_dir.mkdir()
         config2 = server2_dir / "config.yml"
         config2.write_text(
-            """server:
-  name: server2
-  url: vpn2.example.com
-  port: 51821
-  subnet: 10.14.14.0/24
+            """server_url: vpn2.example.com
+server_port: 51821
+peers: ""
+peer_dns: auto
+internal_subnet: 10.14.14.0
+allowed_ips: 0.0.0.0/0
+tz: UTC
+log_confs: true
+container_name: wireguard-server2
+image: linuxserver/wireguard:latest
 """
         )
 
         mock_yaml.safe_load.side_effect = [
-            {
-                "server": {
-                    "name": "server1",
-                    "url": "vpn1.example.com",
-                    "port": 51820,
-                    "subnet": "10.13.13.0/24",
-                }
-            },
-            {
-                "server": {
-                    "name": "server2",
-                    "url": "vpn2.example.com",
-                    "port": 51821,
-                    "subnet": "10.14.14.0/24",
-                }
-            },
+            StoredServerConfigData(
+                server_url="vpn1.example.com",
+                server_port=51820,
+                peers="",
+                peer_dns="auto",
+                internal_subnet="10.13.13.0",
+                allowed_ips="0.0.0.0/0",
+                tz="UTC",
+                log_confs=True,
+                container_name="wireguard-server1",
+                image="linuxserver/wireguard:latest",
+            ),
+            StoredServerConfigData(
+                server_url="vpn2.example.com",
+                server_port=51821,
+                peers="",
+                peer_dns="auto",
+                internal_subnet="10.14.14.0",
+                allowed_ips="0.0.0.0/0",
+                tz="UTC",
+                log_confs=True,
+                container_name="wireguard-server2",
+                image="linuxserver/wireguard:latest",
+            ),
         ]
 
         manager = ServerManager()
@@ -476,7 +420,7 @@ class TestServerManager:
     def test_list_servers_empty(self, mock_logger, tmp_dir):
         """Test list_servers when no servers exist"""
         servers_dir = tmp_dir / "servers"
-        servers_dir.mkdir()
+        servers_dir.mkdir(exist_ok=True)
 
         manager = ServerManager()
         manager.list_servers()
@@ -488,7 +432,7 @@ class TestServerManager:
     def test_list_servers_config_error(self, mock_logger, mock_yaml, tmp_dir):
         """Test list_servers when server config has error"""
         servers_dir = tmp_dir / "servers"
-        servers_dir.mkdir()
+        servers_dir.mkdir(exist_ok=True)
 
         server_dir = servers_dir / "server1"
         server_dir.mkdir()
@@ -535,9 +479,9 @@ class TestServerManager:
         """Test server removal when server has clients"""
         server_dir = tmp_dir / "servers" / "test-server"
         server_dir.mkdir(parents=True)
-        clients_dir = server_dir / "clients"
-        clients_dir.mkdir()
-        (clients_dir / "client1.conf").write_text("test")
+        container_config_dir = server_dir / "container-config"
+        container_config_dir.mkdir()
+        (container_config_dir / "peer1.conf").write_text("test")
 
         manager = ServerManager()
         result = manager.remove_server("test-server")
@@ -552,9 +496,9 @@ class TestServerManager:
         """Test server removal with clients using force flag"""
         server_dir = tmp_dir / "servers" / "test-server"
         server_dir.mkdir(parents=True)
-        clients_dir = server_dir / "clients"
-        clients_dir.mkdir()
-        (clients_dir / "client1.conf").write_text("test")
+        container_config_dir = server_dir / "container-config"
+        container_config_dir.mkdir()
+        (container_config_dir / "peer1.conf").write_text("test")
 
         manager = ServerManager()
         with patch.object(manager, "build", return_value=True):

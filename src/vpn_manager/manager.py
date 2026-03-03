@@ -14,7 +14,6 @@ from pathlib import Path
 import typer
 
 from .clients import ClientManager
-from .keys import KeyManager
 from .servers.servers import ServerCreateConfigData, ServerManager
 from .services import ServiceManager
 from .utils import Logger
@@ -26,6 +25,9 @@ CIDR_PARTS_COUNT = 2
 MIN_SUBNET_MASK = 0
 MAX_SUBNET_MASK = 32
 
+# Common context settings for all Typer apps
+CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
+
 # Create main Typer app
 app = typer.Typer(
     name="vpn-manager",
@@ -33,18 +35,17 @@ app = typer.Typer(
     add_completion=True,
     no_args_is_help=True,
     rich_markup_mode="rich",
+    context_settings=CONTEXT_SETTINGS,
 )
 
 # Create sub-apps for command groups
-service_app = typer.Typer(help="Service management")
-client_app = typer.Typer(help="Client management")
-key_app = typer.Typer(help="Key management")
-server_app = typer.Typer(help="Server management")
+service_app = typer.Typer(help="Service management", context_settings=CONTEXT_SETTINGS)
+client_app = typer.Typer(help="Client management", context_settings=CONTEXT_SETTINGS)
+server_app = typer.Typer(help="Server management", context_settings=CONTEXT_SETTINGS)
 
 # Register sub-apps
 app.add_typer(service_app, name="service")
 app.add_typer(client_app, name="client")
-app.add_typer(key_app, name="key")
 app.add_typer(server_app, name="server")
 
 
@@ -110,16 +111,19 @@ def _validate_subnet(subnet: str) -> bool:
 
 
 def _validate_peers(peers: str) -> bool:
-    """Validate number of peers"""
-    try:
-        peers_int = int(peers)
-        if peers_int < 1:
-            Logger.error("Number of peers must be at least 1")
+    """Validate peer names (comma-separated)"""
+    if not peers or peers.strip() == "":
+        return True  # Empty is valid (no peers)
+
+    # Check if peers contain only valid characters
+    for peer_name in peers.split(","):
+        peer = peer_name.strip()
+        if not peer:
+            continue
+        if not peer.replace("-", "").replace("_", "").isalnum():
+            Logger.error(f"Peer name '{peer}' can only contain alphanumeric characters, hyphens, and underscores")
             return False
-        return True
-    except ValueError:
-        Logger.error("Number of peers must be a valid number")
-        return False
+    return True
 
 
 def _interactive_server_create() -> ServerCreateConfigData:
@@ -133,7 +137,7 @@ def _interactive_server_create() -> ServerCreateConfigData:
     subnet = _prompt_for_input("Server subnet (CIDR)", "10.13.13.0/24", _validate_subnet)
     dns = _prompt_for_input("DNS servers", "1.1.1.1,8.8.8.8")
     allowed_ips = _prompt_for_input("Allowed IPs", "0.0.0.0/0")
-    peers = _prompt_for_input("Number of peers", "1", _validate_peers)
+    peers = _prompt_for_input("Peer names (comma-separated, e.g., peer1,peer2)", "", _validate_peers)
 
     return ServerCreateConfigData(
         name=name,
@@ -142,7 +146,7 @@ def _interactive_server_create() -> ServerCreateConfigData:
         subnet=subnet,
         dns=dns,
         allowed_ips=allowed_ips,
-        peers=int(peers),
+        peers=peers,
     )
 
 
@@ -182,10 +186,10 @@ def _validate_subnet_option(value: str | None) -> str | None:
     return value
 
 
-def _validate_peers_option(value: int) -> int:
+def _validate_peers_option(value: str) -> str:
     """Validate peers option"""
-    if value < 1:
-        raise typer.BadParameter("Number of peers must be at least 1")
+    if not _validate_peers(value):
+        raise typer.BadParameter("Peer names can only contain alphanumeric characters, hyphens, and underscores")
     return value
 
 
@@ -376,22 +380,6 @@ def client_list(
 
 
 # ============================================================================
-# Key Management Commands
-# ============================================================================
-
-@key_app.command("generate")
-def key_generate(
-    output_dir: str = typer.Argument(None, help="Output directory (optional)"),
-) -> None:
-    """Generate key pair"""
-    Logger.header("GENERATING WIREGUARD KEYS")
-    key_manager = KeyManager()
-    if not key_manager.generate(output_dir):
-        Logger.error("Failed to generate WireGuard keys")
-        raise typer.Exit(1)
-
-
-# ============================================================================
 # Server Management Commands
 # ============================================================================
 
@@ -403,7 +391,7 @@ def server_create(  # noqa: PLR0913
     subnet: str = typer.Option(None, "-s", "--subnet", help="Server subnet", callback=_validate_subnet_option),
     dns: str = typer.Option("1.1.1.1,8.8.8.8", "-d", "--dns", help="DNS servers"),
     allowed_ips: str = typer.Option("0.0.0.0/0", "-a", "--allowed-ips", help="Allowed IPs"),
-    peers: int = typer.Option(1, "-P", "--peers", help="Number of peers", callback=_validate_peers_option),
+    peers: str = typer.Option("", "-P", "--peers", help="Peer names (comma-separated)", callback=_validate_peers_option),
 ) -> None:
     """Create new server (interactive if no args provided)"""
     server_manager = ServerManager()
